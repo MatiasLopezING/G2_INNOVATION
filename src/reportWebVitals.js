@@ -1,4 +1,8 @@
-const reportWebVitals = onPerfEntry => {
+// reportWebVitals.js
+// Archivo de ejemplo para evitar errores de importación.
+// Puedes agregar métricas de rendimiento aquí si lo necesitas.
+
+const reportWebVitals = (onPerfEntry) => {
   if (onPerfEntry && onPerfEntry instanceof Function) {
     import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
       getCLS(onPerfEntry);
