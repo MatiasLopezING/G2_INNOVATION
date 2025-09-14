@@ -2,14 +2,18 @@
 
 Aplicación web desarrollada para la materia Ingeniería de Software.
 
-Incluye:
-- Autenticación con Firebase
-- Gestión de usuarios por roles (Distribuidor, Farmacia, Usuario)
-- Navegación con React Router
+## Ejecución del proyecto
 
-Repositorio: https://github.com/MatiasLopezING/G2_INNOVATION
+1. Instala las dependencias:
+	```
+	npm install
+	```
+2. Inicia la aplicación:
+	```
+	npm start
+	```
 
-# Getting Started with Create React App
+La app estará disponible en http://localhost:3000
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
