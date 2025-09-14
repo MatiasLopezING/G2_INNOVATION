@@ -1,3 +1,14 @@
+# G2 Innovation - Proyecto de Ingeniería de Software
+
+Aplicación web desarrollada para la materia Ingeniería de Software.
+
+Incluye:
+- Autenticación con Firebase
+- Gestión de usuarios por roles (Distribuidor, Farmacia, Usuario)
+- Navegación con React Router
+
+Repositorio: https://github.com/MatiasLopezING/G2_INNOVATION
+
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
