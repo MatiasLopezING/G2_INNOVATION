@@ -4,6 +4,7 @@ import { db, auth } from "../firebase";
 
 const ListaProductos = () => {
   const [productos, setProductos] = useState([]);
+  const [filtroNombre, setFiltroNombre] = useState("");
   const [usuario, setUsuario] = useState(null);
   const [comprando, setComprando] = useState("");
 
@@ -39,6 +40,16 @@ const ListaProductos = () => {
       return;
     }
     const producto = productos.find(p => p.id === id);
+    // Buscar farmacia asociada al producto
+    const farmacia = farmacias.find(f => f.id === producto.farmaciaId);
+    let precioFinal = Number(producto.precio);
+    // Si obra social del usuario coincide con la aceptada por la farmacia, aplicar descuento
+    if (
+      usuario && farmacia && usuario.obraSocial && farmacia.obraSocial &&
+      usuario.obraSocial.trim().toLowerCase() === farmacia.obraSocial.trim().toLowerCase()
+    ) {
+      precioFinal = precioFinal * 0.9;
+    }
     try {
       // Cambiar estado del producto a 'enviando'
       await update(ref(db, `productos/${id}`), { estado: "enviando" });
@@ -46,7 +57,7 @@ const ListaProductos = () => {
       await push(ref(db, `compras/${user.uid}`), {
         productoId: id,
         nombre: producto.nombre,
-        precio: producto.precio,
+        precio: precioFinal,
         estado: "enviando",
         fecha: new Date().toISOString(),
         farmaciaId: producto.farmaciaId
@@ -90,14 +101,16 @@ const ListaProductos = () => {
   }, []);
 
   // Asociar producto con farmacia y calcular distancia
-  const productosConDistancia = productos.map(prod => {
-    const farmacia = farmacias.find(f => f.id === prod.farmaciaId);
-    return {
-      ...prod,
-      farmacia,
-      distancia: farmacia && usuario ? distancia(usuario, farmacia) : null
-    };
-  });
+  const productosConDistancia = productos
+    .filter(prod => prod.nombre.toLowerCase().includes(filtroNombre.toLowerCase()))
+    .map(prod => {
+      const farmacia = farmacias.find(f => f.id === prod.farmaciaId);
+      return {
+        ...prod,
+        farmacia,
+        distancia: farmacia && usuario ? distancia(usuario, farmacia) : null
+      };
+    });
 
   // Ordenar por distancia
   productosConDistancia.sort((a, b) => {
@@ -109,6 +122,13 @@ const ListaProductos = () => {
   return (
     <div style={{ maxWidth: "600px", margin: "auto", padding: "20px" }}>
       <h2>Productos disponibles</h2>
+      <input
+        type="text"
+        placeholder="Filtrar por nombre de medicamento"
+        value={filtroNombre}
+        onChange={e => setFiltroNombre(e.target.value)}
+        style={{ marginBottom: "15px", width: "100%", padding: "8px" }}
+      />
       {productosConDistancia.length === 0 ? (
         <p>No hay productos cargados.</p>
       ) : (

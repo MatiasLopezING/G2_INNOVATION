@@ -4,7 +4,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { ref, get } from "firebase/database";
 import { auth, db } from '../firebase';
 
-export default function Login() {
+export default function Login({ botonMargin = 10, botonRegistro }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -37,36 +37,43 @@ export default function Login() {
   };
 
   return (
-    <div style={{ maxWidth: "300px", margin: "auto", padding: "20px" }}>
-      <h2>Login</h2>
-      <form onSubmit={handleLogin}>
-        <div>
-          <label>Email:</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Ingresa tu email"
-            required
-            style={{ width: "100%", marginBottom: "10px" }}
-          />
-        </div>
-        <div>
-          <label>Contraseña:</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Ingresa tu contraseña"
-            required
-            style={{ width: "100%", marginBottom: "10px" }}
-          />
-        </div>
-        <button type="submit" style={{ width: "100%" }}>
-          Ingresar
-        </button>
-      </form>
-      {error && <p style={{color:'red'}}>{error}</p>}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div style={{ maxWidth: "350px", width: '100%', background: '#fff', padding: "30px", borderRadius: "10px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+        <h2 style={{ textAlign: 'center', marginBottom: 18 }}>Login</h2>
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+          <div style={{ width: '100%' }}>
+            <label>Email:</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Ingresa tu email"
+              required
+              style={{ width: "100%" }}
+            />
+          </div>
+          <div style={{ width: '100%' }}>
+            <label>Contraseña:</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Ingresa tu contraseña"
+              required
+              style={{ width: "100%" }}
+            />
+          </div>
+          <button type="submit" style={{ width: "100%", marginBottom: botonMargin }}>
+            Ingresar
+          </button>
+          {botonRegistro && (
+            <button type="button" style={{ width: "100%" }} onClick={botonRegistro}>
+              Registrarse
+            </button>
+          )}
+        </form>
+        {error && <p style={{color:'red', textAlign:'center'}}>{error}</p>}
+      </div>
     </div>
   );
 }
