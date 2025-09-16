@@ -7,6 +7,8 @@ const ListaProductos = () => {
   const [filtroNombre, setFiltroNombre] = useState("");
   const [usuario, setUsuario] = useState(null);
   const [comprando, setComprando] = useState("");
+  const [distanciasApi, setDistanciasApi] = useState({});
+  const openRouteApiKey = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY5YjI1NzI1YmViMTQ1MWQ4OWVmYjhhM2E0YmJlM2NjIiwiaCI6Im11cm11cjY0In0=";
 
   useEffect(() => {
     // Obtener datos del usuario actual
@@ -68,17 +70,40 @@ const ListaProductos = () => {
     setComprando("");
   };
 
+  async function distanciaPorCalles(u, f, prodId) {
+    if (!u || !f || !u.latitud || !u.longitud || !f.latitud || !f.longitud) return null;
+    try {
+      const response = await fetch(`https://api.openrouteservice.org/v2/directions/driving-car?api_key=${openRouteApiKey}&start=${f.longitud},${f.latitud}&end=${u.longitud},${u.latitud}`);
+      const data = await response.json();
+      if (data && data.features && data.features[0] && data.features[0].properties && data.features[0].properties.summary) {
+        const metros = data.features[0].properties.summary.distance;
+        setDistanciasApi(prev => ({ ...prev, [prodId]: metros }));
+      }
+    } catch {
+      setDistanciasApi(prev => ({ ...prev, [prodId]: null }));
+    }
+  }
+
   // Calcular distancia entre usuario y farmacia
+  // Distancia real usando lat/lng (Haversine)
   function distancia(u, f) {
-    if (!u || !f) return Infinity;
-    const dx = Math.abs(Number(u.calle1) - Number(f.calle1));
-    const dy = Math.abs(Number(u.calle2) - Number(f.calle2));
-    return (dx + dy) * 100; // cada salto es 100 metros
+    if (!u || !f || !u.latitud || !u.longitud || !f.latitud || !f.longitud) return Infinity;
+    const toRad = deg => deg * Math.PI / 180;
+    const R = 6371000; // Radio de la Tierra en metros
+    const lat1 = toRad(Number(u.latitud));
+    const lon1 = toRad(Number(u.longitud));
+    const lat2 = toRad(Number(f.latitud));
+    const lon2 = toRad(Number(f.longitud));
+    const dLat = lat2 - lat1;
+    const dLon = lon2 - lon1;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
   }
 
   function mostrarDistancia(dist) {
     if (dist === null || dist === undefined || isNaN(dist)) return "-";
-    if (dist < 1000) return dist + " m";
+    if (dist < 1000) return Math.round(dist) + " m";
     return (dist / 1000).toFixed(2) + " km";
   }
 
@@ -105,10 +130,13 @@ const ListaProductos = () => {
     .filter(prod => prod.nombre.toLowerCase().includes(filtroNombre.toLowerCase()))
     .map(prod => {
       const farmacia = farmacias.find(f => f.id === prod.farmaciaId);
+      if (farmacia && usuario && prod.id && distanciasApi[prod.id] === undefined) {
+        distanciaPorCalles(usuario, farmacia, prod.id);
+      }
       return {
         ...prod,
         farmacia,
-        distancia: farmacia && usuario ? distancia(usuario, farmacia) : null
+        distancia: distanciasApi[prod.id] !== undefined ? distanciasApi[prod.id] : null
       };
     });
 

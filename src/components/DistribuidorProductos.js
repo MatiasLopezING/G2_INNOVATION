@@ -1,70 +1,94 @@
+
 import React, { useEffect, useState } from "react";
 import { ref, onValue, update, get } from "firebase/database";
 import { db, auth } from "../firebase";
 
-const DistribuidorProductos = () => {
+const openRouteApiKey = "TU_API_KEY_AQUI"; // ⚠️ Ideal moverlo a backend
+
+function DistribuidorProductos() {
   const [productos, setProductos] = useState([]);
-  const [procesando, setProcesando] = useState("");
-  const [dinero, setDinero] = useState(0);
   const [farmacias, setFarmacias] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  const [procesando, setProcesando] = useState("");
+  const [dinero, setDinero] = useState(0);
+  const [distanciasApi, setDistanciasApi] = useState({});
 
   useEffect(() => {
-    // Productos en estado "enviando"
     const productosRef = ref(db, "productos");
     const unsubscribeProductos = onValue(productosRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
-        const lista = Object.entries(data)
-          .map(([id, prod]) => ({ id, ...prod }))
-          .filter((prod) => prod.estado === "enviando");
-        setProductos(lista);
-      } else {
-        setProductos([]);
-      }
+      setProductos(
+        data
+          ? Object.entries(data)
+              .map(([id, p]) => ({ id, ...p }))
+              .filter((p) => p.estado === "enviando")
+          : []
+      );
     });
-    // Farmacias
+
     const farmaciasRef = ref(db, "users");
     const unsubscribeFarmacias = onValue(farmaciasRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const lista = Object.entries(data)
-          .map(([id, u]) => ({ id, ...u }))
-          .filter(u => u.role === "Farmacia");
-        setFarmacias(lista);
-        // También obtener todos los usuarios para buscar el comprador
+        setFarmacias(
+          Object.entries(data)
+            .map(([id, u]) => ({ id, ...u }))
+            .filter((u) => u.role === "Farmacia")
+        );
         setUsuarios(Object.entries(data).map(([id, u]) => ({ id, ...u })));
       } else {
         setFarmacias([]);
         setUsuarios([]);
       }
     });
+
     // Dinero del repartidor
+    let unsubscribeDinero = () => {};
     const user = auth.currentUser;
     if (user) {
       const userRef = ref(db, `users/${user.uid}`);
-      const unsubscribeDinero = onValue(userRef, (snapshot) => {
+      unsubscribeDinero = onValue(userRef, (snapshot) => {
         const datos = snapshot.val();
-        setDinero(datos && datos.dinero ? Number(datos.dinero) : 0);
+        setDinero(datos?.dinero ? Number(datos.dinero) : 0);
       });
-      return () => {
-        unsubscribeProductos();
-        unsubscribeFarmacias();
-        unsubscribeDinero();
-      };
     }
+
     return () => {
       unsubscribeProductos();
       unsubscribeFarmacias();
+      unsubscribeDinero();
     };
   }, []);
+
+  const distanciaPorCalles = async (usuario, farmacia, prodId) => {
+    if (!usuario?.lat || !farmacia?.lat) return;
+    try {
+      const response = await fetch(
+        `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${openRouteApiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            coordinates: [
+              [farmacia.lng, farmacia.lat],
+              [usuario.lng, usuario.lat],
+            ],
+          }),
+        }
+      );
+      const data = await response.json();
+      const distancia =
+        data?.features?.[0]?.properties?.segments?.[0]?.distance || null;
+      setDistanciasApi((prev) => ({ ...prev, [prodId]: distancia }));
+    } catch {
+      setDistanciasApi((prev) => ({ ...prev, [prodId]: null }));
+    }
+  };
 
   const handleRecibido = async (id) => {
     setProcesando(id);
     try {
-      // Cambiar estado del producto a recibido
       await update(ref(db, `productos/${id}`), { estado: "recibido" });
-      // Actualizar el estado en la compra del usuario
       const comprasRef = ref(db, "compras");
       onValue(comprasRef, (snapshot) => {
         const data = snapshot.val();
@@ -78,13 +102,9 @@ const DistribuidorProductos = () => {
           });
         }
       }, { onlyOnce: true });
-
-      // Obtener precio del producto
       const productoSnap = await get(ref(db, `productos/${id}`));
       const producto = productoSnap.val();
       const precio = producto && producto.precio ? Number(producto.precio) : 0;
-
-      // Obtener usuario actual (repartidor)
       const user = auth.currentUser;
       if (user) {
         const userRef = ref(db, `users/${user.uid}`);
@@ -100,15 +120,37 @@ const DistribuidorProductos = () => {
     setProcesando("");
   };
 
-  // Calcular distancia entre farmacia y usuario comprador
-  function calcularDistancia(farmacia, usuario) {
-    if (!farmacia || !usuario) return "-";
-    const dx = Math.abs(Number(usuario.calle1) - Number(farmacia.calle1));
-    const dy = Math.abs(Number(usuario.calle2) - Number(farmacia.calle2));
-    const metros = (dx + dy) * 100;
-    if (metros < 1000) return metros + " m";
-    return (metros / 1000).toFixed(2) + " km";
-  }
+  // Calcular productos con farmacia, usuario y distancia antes del return
+  const productosConDistancia = productos
+    .map((prod) => {
+      const farmacia = farmacias.find(f => f.id === prod.farmaciaId);
+      let usuarioCompra = null;
+      if (usuarios.length > 0) {
+        for (const u of usuarios) {
+          if (u.compras) {
+            for (const compraId in u.compras) {
+              const compra = u.compras[compraId];
+              if (compra.productoId === prod.id && compra.estado === "enviando") {
+                usuarioCompra = u;
+                break;
+              }
+            }
+          }
+          if (usuarioCompra) break;
+        }
+      }
+      // Llamar a la API solo si no está calculado
+      if (farmacia && usuarioCompra && prod.id && distanciasApi[prod.id] === undefined) {
+        distanciaPorCalles(usuarioCompra, farmacia, prod.id);
+      }
+      return {
+        prod,
+        farmacia,
+        distanciaValor: distanciasApi[prod.id] !== undefined ? distanciasApi[prod.id] : Infinity,
+        distancia: distanciasApi[prod.id] !== undefined ? distanciasApi[prod.id] : null
+      };
+    })
+    .sort((a, b) => a.distanciaValor - b.distanciaValor);
 
   return (
     <div style={{ maxWidth: "700px", margin: "auto", padding: "20px" }}>
@@ -131,58 +173,25 @@ const DistribuidorProductos = () => {
             </tr>
           </thead>
           <tbody>
-            {[...productos]
-              .map((prod) => {
-                // Buscar farmacia por ID
-                const farmacia = farmacias.find(f => f.id === prod.farmaciaId);
-                // Buscar usuario comprador (por la compra en la base de datos)
-                let usuarioCompra = null;
-                let distanciaValor = Infinity;
-                let distancia = "-";
-                if (usuarios.length > 0) {
-                  for (const u of usuarios) {
-                    if (u.compras) {
-                      for (const compraId in u.compras) {
-                        const compra = u.compras[compraId];
-                        if (compra.productoId === prod.id && compra.estado === "enviando") {
-                          usuarioCompra = u;
-                          distanciaValor = Math.abs(Number(u.calle1) - Number(farmacia.calle1)) + Math.abs(Number(u.calle2) - Number(farmacia.calle2));
-                          distanciaValor = distanciaValor * 100;
-                          distancia = distanciaValor < 1000 ? distanciaValor + " m" : (distanciaValor / 1000).toFixed(2) + " km";
-                          break;
-                        }
-                      }
-                    }
-                    if (usuarioCompra) break;
-                  }
-                }
-                return {
-                  prod,
-                  farmacia,
-                  distanciaValor,
-                  distancia
-                };
-              })
-              .sort((a, b) => a.distanciaValor - b.distanciaValor)
-              .map(({ prod, farmacia, distancia }, idx) => (
-                <tr key={prod.id}>
-                  <td>{prod.nombre}</td>
-                  <td>${prod.precio}</td>
-                  <td>{prod.stock}</td>
-                  <td>{farmacia ? farmacia.nombreFarmacia : prod.farmaciaId}</td>
-                  <td>{distancia}</td>
-                  <td>
-                    <button onClick={() => handleRecibido(prod.id)} disabled={procesando === prod.id}>
-                      {procesando === prod.id ? "Procesando..." : "Marcar como recibido"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+            {productosConDistancia.map(({ prod, farmacia, distancia }, idx) => (
+              <tr key={prod.id}>
+                <td>{prod.nombre}</td>
+                <td>${prod.precio}</td>
+                <td>{prod.stock}</td>
+                <td>{farmacia ? farmacia.nombreFarmacia : prod.farmaciaId}</td>
+                <td>{distancia === null ? '-' : (distancia < 1000 ? Math.round(distancia) + ' m' : (distancia / 1000).toFixed(2) + ' km')}</td>
+                <td>
+                  <button onClick={() => handleRecibido(prod.id)} disabled={procesando === prod.id}>
+                    {procesando === prod.id ? "Procesando..." : "Marcar como recibido"}
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
     </div>
   );
-};
+}
 
 export default DistribuidorProductos;

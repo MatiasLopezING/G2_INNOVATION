@@ -21,13 +21,17 @@ const Register = () => {
   const [nroAfiliado, setNroAfiliado] = useState('');
   const [vencimiento, setVencimiento] = useState('');
   const [cobertura, setCobertura] = useState('');
-  const [calle1, setCalle1] = useState('');
-  const [calle2, setCalle2] = useState('');
+  const [direccion, setDireccion] = useState('');
+  const [lat, setLat] = useState('');
+  const [lng, setLng] = useState('');
+  const [coordStatus, setCoordStatus] = useState(null); // null, 'ok', 'fail'
 
   // Farmacia
   const [nombreFarmacia, setNombreFarmacia] = useState('');
-  const [calle1Farmacia, setCalle1Farmacia] = useState('');
-  const [calle2Farmacia, setCalle2Farmacia] = useState('');
+  const [direccionFarmacia, setDireccionFarmacia] = useState('');
+  const [latFarmacia, setLatFarmacia] = useState('');
+  const [lngFarmacia, setLngFarmacia] = useState('');
+  const [coordStatusFarmacia, setCoordStatusFarmacia] = useState(null); // null, 'ok', 'fail'
   const [contactoFarmacia, setContactoFarmacia] = useState('');
   const [obrasSocialesAceptadas, setObrasSocialesAceptadas] = useState('');
   const [horarios, setHorarios] = useState('');
@@ -64,15 +68,15 @@ const Register = () => {
           nroAfiliado,
           vencimiento,
           cobertura,
-          calle1,
-          calle2
+            latitud: lat,
+            longitud: lng
         };
       } else if (role === 'Farmacia') {
         userData = {
           ...userData,
           nombreFarmacia,
-          calle1: calle1Farmacia,
-          calle2: calle2Farmacia,
+          latitud: latFarmacia,
+          longitud: lngFarmacia,
           contactoFarmacia,
           obrasSocialesAceptadas,
           horarios
@@ -124,15 +128,91 @@ const Register = () => {
               <input type="text" placeholder="Nro. Afiliado" value={nroAfiliado} onChange={e => setNroAfiliado(e.target.value)} required style={{ width: '100%' }} />
               <input type="date" placeholder="Vencimiento" value={vencimiento} onChange={e => setVencimiento(e.target.value)} required style={{ width: '100%' }} />
               <input type="text" placeholder="Cobertura" value={cobertura} onChange={e => setCobertura(e.target.value)} required style={{ width: '100%' }} />
-              <input type="number" placeholder="Calle 1" value={calle1} onChange={e => setCalle1(e.target.value)} required style={{ width: '100%' }} />
-              <input type="number" placeholder="Calle 2" value={calle2} onChange={e => setCalle2(e.target.value)} required style={{ width: '100%' }} />
+                <input type="text" placeholder="Dirección completa" value={direccion} onChange={e => setDireccion(e.target.value)} required style={{ width: '100%' }} />
+                <button
+                  type="button"
+                  style={{ marginBottom: "10px", width: "100%", padding: "8px" }}
+                  onClick={async () => {
+                    setCoordStatus(null);
+                    if (!direccion) return;
+                    try {
+                      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion)}`);
+                      const data = await response.json();
+                      if (data && data.length > 0) {
+                        setLat(data[0].lat);
+                        setLng(data[0].lon);
+                        setCoordStatus('ok');
+                      } else {
+                        setLat("");
+                        setLng("");
+                        setCoordStatus('fail');
+                      }
+                    } catch {
+                      setLat("");
+                      setLng("");
+                      setCoordStatus('fail');
+                    }
+                  }}
+                >Obtener latitud y longitud</button>
+                <div style={{ marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  {coordStatus === 'ok' && (
+                    <span style={{ color: 'green', fontSize: '1.5em' }}>✔️</span>
+                  )}
+                  {coordStatus === 'fail' && (
+                    <span style={{ color: 'red', fontSize: '1.5em' }}>❌</span>
+                  )}
+                  {lat && lng && coordStatus === 'ok' && (
+                    <span><strong>Latitud:</strong> {lat} <strong>Longitud:</strong> {lng}</span>
+                  )}
+                  {coordStatus === 'fail' && (
+                    <span>No se encontró la dirección.</span>
+                  )}
+                </div>
             </>
           )}
           {role === 'Farmacia' && (
             <>
               <input type="text" placeholder="Nombre de la farmacia" value={nombreFarmacia} onChange={e => setNombreFarmacia(e.target.value)} required style={{ width: '100%' }} />
-              <input type="number" placeholder="Calle 1" value={calle1Farmacia} onChange={e => setCalle1Farmacia(e.target.value)} required style={{ width: '100%' }} />
-              <input type="number" placeholder="Calle 2" value={calle2Farmacia} onChange={e => setCalle2Farmacia(e.target.value)} required style={{ width: '100%' }} />
+              <input type="text" placeholder="Dirección completa" value={direccionFarmacia} onChange={e => setDireccionFarmacia(e.target.value)} required style={{ width: '100%' }} />
+              <button
+                type="button"
+                style={{ marginBottom: "10px", width: "100%", padding: "8px" }}
+                onClick={async () => {
+                  setCoordStatusFarmacia(null);
+                  if (!direccionFarmacia) return;
+                  try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccionFarmacia)}`);
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                      setLatFarmacia(data[0].lat);
+                      setLngFarmacia(data[0].lon);
+                      setCoordStatusFarmacia('ok');
+                    } else {
+                      setLatFarmacia("");
+                      setLngFarmacia("");
+                      setCoordStatusFarmacia('fail');
+                    }
+                  } catch {
+                    setLatFarmacia("");
+                    setLngFarmacia("");
+                    setCoordStatusFarmacia('fail');
+                  }
+                }}
+              >Obtener latitud y longitud</button>
+              <div style={{ marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+                {coordStatusFarmacia === 'ok' && (
+                  <span style={{ color: 'green', fontSize: '1.5em' }}>✔️</span>
+                )}
+                {coordStatusFarmacia === 'fail' && (
+                  <span style={{ color: 'red', fontSize: '1.5em' }}>❌</span>
+                )}
+                {latFarmacia && lngFarmacia && coordStatusFarmacia === 'ok' && (
+                  <span><strong>Latitud:</strong> {latFarmacia} <strong>Longitud:</strong> {lngFarmacia}</span>
+                )}
+                {coordStatusFarmacia === 'fail' && (
+                  <span>No se encontró la dirección.</span>
+                )}
+              </div>
               <input type="text" placeholder="Contacto" value={contactoFarmacia} onChange={e => setContactoFarmacia(e.target.value)} required style={{ width: '100%' }} />
               <input type="text" placeholder="Obras sociales aceptadas" value={obrasSocialesAceptadas} onChange={e => setObrasSocialesAceptadas(e.target.value)} required style={{ width: '100%' }} />
               <input type="text" placeholder="Horarios" value={horarios} onChange={e => setHorarios(e.target.value)} required style={{ width: '100%' }} />
