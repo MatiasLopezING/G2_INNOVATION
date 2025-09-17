@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { ref, onValue, update, push } from "firebase/database";
 import { db, auth } from "../firebase";
+import Carrito from "./Carrito";
 
-const ListaProductos = () => {
+const ListaProductos = ({ mostrarCarrito = true }) => {
   const [productos, setProductos] = useState([]);
   const [filtroNombre, setFiltroNombre] = useState("");
   const [usuario, setUsuario] = useState(null);
   const [comprando, setComprando] = useState("");
   const [distanciasApi, setDistanciasApi] = useState({});
   const openRouteApiKey = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY5YjI1NzI1YmViMTQ1MWQ4OWVmYjhhM2E0YmJlM2NjIiwiaCI6Im11cm11cjY0In0=";
+  const [carrito, setCarrito] = useState([]);
+  const [cantidades, setCantidades] = useState({});
 
   useEffect(() => {
     // Obtener datos del usuario actual
@@ -101,6 +104,71 @@ const ListaProductos = () => {
     return R * c;
   }
 
+  // Agregar producto al carrito con cantidad
+  const handleAgregarCarrito = (id) => {
+    const producto = productos.find(p => p.id === id);
+    if (!producto) return;
+    const cantidad = cantidades[id] ? parseInt(cantidades[id]) : 1;
+    if (cantidad < 1 || cantidad > producto.stock) return;
+    // Si ya está en el carrito, suma la cantidad
+    const idx = carrito.findIndex(p => p.id === id);
+    if (idx >= 0) {
+      const nuevoCarrito = [...carrito];
+      nuevoCarrito[idx].cantidad = (nuevoCarrito[idx].cantidad || 1) + cantidad;
+      // No permitir superar el stock
+      if (nuevoCarrito[idx].cantidad > producto.stock) nuevoCarrito[idx].cantidad = producto.stock;
+      setCarrito(nuevoCarrito);
+    } else {
+      setCarrito([...carrito, { ...producto, cantidad }]);
+    }
+    setCantidades({ ...cantidades, [id]: 1 });
+  };
+
+  // Eliminar producto del carrito
+  const handleRemoveCarrito = (id) => {
+    setCarrito(carrito.filter(p => p.id !== id));
+  };
+
+  // Comprar todos los productos del carrito
+  const handleComprarCarrito = async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      alert("Debes iniciar sesión para comprar.");
+      return;
+    }
+    setComprando("carrito");
+    try {
+      for (const producto of carrito) {
+        // Buscar farmacia asociada al producto
+        const farmacia = farmacias.find(f => f.id === producto.farmaciaId);
+        let precioFinal = Number(producto.precio);
+        if (
+          usuario && farmacia && usuario.obraSocial && farmacia.obraSocial &&
+          usuario.obraSocial.trim().toLowerCase() === farmacia.obraSocial.trim().toLowerCase()
+        ) {
+          precioFinal = precioFinal * 0.9;
+        }
+        // Cambiar estado del producto a 'enviando'
+        await update(ref(db, `productos/${producto.id}`), { estado: "enviando" });
+        // Guardar la compra en el nodo 'compras' del usuario
+        await push(ref(db, `compras/${user.uid}`), {
+          productoId: producto.id,
+          nombre: producto.nombre,
+          precio: precioFinal,
+          cantidad: producto.cantidad || 1,
+          estado: "enviando",
+          fecha: new Date().toISOString(),
+          farmaciaId: producto.farmaciaId
+        });
+      }
+      setCarrito([]);
+      alert("¡Compra realizada!");
+    } catch (err) {
+      alert("Error al comprar: " + err.message);
+    }
+    setComprando("");
+  };
+
   function mostrarDistancia(dist) {
     if (dist === null || dist === undefined || isNaN(dist)) return "-";
     if (dist < 1000) return Math.round(dist) + " m";
@@ -157,6 +225,9 @@ const ListaProductos = () => {
         onChange={e => setFiltroNombre(e.target.value)}
         style={{ marginBottom: "15px", width: "100%", padding: "8px" }}
       />
+      {mostrarCarrito && (
+        <Carrito carrito={carrito} onRemove={handleRemoveCarrito} onComprar={handleComprarCarrito} />
+      )}
       {productosConDistancia.length === 0 ? (
         <p>No hay productos cargados.</p>
       ) : (
@@ -187,9 +258,19 @@ const ListaProductos = () => {
                 }</td>
                 <td>
                   {prod.estado === "por_comprar" ? (
-                    <button onClick={() => handleComprar(prod.id)} disabled={comprando === prod.id}>
-                      {comprando === prod.id ? "Comprando..." : "Comprar"}
-                    </button>
+                    <>
+                      <input
+                        type="number"
+                        min={1}
+                        max={prod.stock}
+                        value={cantidades[prod.id] || 1}
+                        onChange={e => setCantidades({ ...cantidades, [prod.id]: e.target.value })}
+                        style={{ width: "60px", marginRight: "8px" }}
+                      />
+                      <button onClick={() => handleAgregarCarrito(prod.id)}>
+                        Agregar al carrito
+                      </button>
+                    </>
                   ) : null}
                 </td>
               </tr>
