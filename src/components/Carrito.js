@@ -1,7 +1,7 @@
 import React from "react";
 
 function Carrito({ carrito, onRemove, onComprar }) {
-  const total = carrito.reduce((acc, prod) => acc + Number(prod.precio), 0);
+  const total = carrito.reduce((acc, prod) => acc + Number(prod.precio) * (prod.cantidad || 1), 0);
   return (
     <div style={{ margin: "20px 0", padding: "15px", border: "1px solid #ccc", borderRadius: "8px", background: "#f9f9f9" }}>
       <h3>Carrito de compras</h3>
@@ -12,7 +12,9 @@ function Carrito({ carrito, onRemove, onComprar }) {
           <thead>
             <tr>
               <th>Producto</th>
-              <th>Precio</th>
+              <th>Precio unitario</th>
+              <th>Cantidad</th>
+              <th>Subtotal</th>
               <th>Acción</th>
             </tr>
           </thead>
@@ -21,6 +23,8 @@ function Carrito({ carrito, onRemove, onComprar }) {
               <tr key={prod.id}>
                 <td>{prod.nombre}</td>
                 <td>${prod.precio}</td>
+                <td>{prod.cantidad || 1}</td>
+                <td>${(Number(prod.precio) * (prod.cantidad || 1)).toFixed(2)}</td>
                 <td>
                   <button onClick={() => onRemove(prod.id)}>Eliminar</button>
                 </td>

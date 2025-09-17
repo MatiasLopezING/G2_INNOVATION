@@ -6,12 +6,68 @@ import { db, auth } from "../firebase";
 const openRouteApiKey = "TU_API_KEY_AQUI"; // ⚠️ Ideal moverlo a backend
 
 function DistribuidorProductos() {
+  // Declarar todos los useState al inicio
   const [productos, setProductos] = useState([]);
   const [farmacias, setFarmacias] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
   const [procesando, setProcesando] = useState("");
   const [dinero, setDinero] = useState(0);
   const [distanciasApi, setDistanciasApi] = useState({});
+  const [timers, setTimers] = useState({});
+
+  useEffect(() => {
+    if (!Array.isArray(productos)) return;
+    const interval = setInterval(() => {
+      setTimers((prev) => {
+        const nuevos = { ...prev };
+        productos.forEach((p) => {
+          if (p && p.fecha && p.estado === "enviando") {
+            const pedidoTime = Date.parse(p.fecha);
+            if (!isNaN(pedidoTime)) {
+              const now = Date.now();
+              const diff = Math.max(0, 600 - Math.floor((now - pedidoTime) / 1000)); // 10 min = 600 seg
+              nuevos[p.id] = diff;
+            } else {
+              nuevos[p.id] = null;
+            }
+          } else {
+            nuevos[p.id] = null;
+          }
+        });
+        return nuevos;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [productos]);
+
+  useEffect(() => {
+    // Cancelar pedidos expirados y reponer stock
+    productos.forEach(async (p) => {
+      if (p.fecha && timers[p.id] === 0 && p.estado === "enviando") {
+        // Buscar compra asociada
+        const comprasRef = ref(db, "compras");
+        onValue(comprasRef, (snapshot) => {
+          const data = snapshot.val();
+          if (data) {
+            Object.entries(data).forEach(([uid, comprasUsuario]) => {
+              Object.entries(comprasUsuario).forEach(([compraId, compra]) => {
+                if (compra.productoId === p.id && compra.estado === "enviando") {
+                  // Cambiar estado a cancelado
+                  update(ref(db, `compras/${uid}/${compraId}`), { estado: "cancelado" });
+                  // Reponer stock
+                  get(ref(db, `productos/${p.id}`)).then((snap) => {
+                    const prod = snap.val();
+                    const nuevoStock = prod && prod.stock ? prod.stock + (compra.cantidad || 1) : (compra.cantidad || 1);
+                    update(ref(db, `productos/${p.id}`), { estado: "por_comprar", stock: nuevoStock });
+                  });
+                }
+              });
+            });
+          }
+        }, { onlyOnce: true });
+      }
+    });
+  }, [timers, productos]);
 
   useEffect(() => {
     const productosRef = ref(db, "productos");
@@ -88,22 +144,31 @@ function DistribuidorProductos() {
   const handleRecibido = async (id) => {
     setProcesando(id);
     try {
-      await update(ref(db, `productos/${id}`), { estado: "recibido" });
+      // Buscar la compra asociada para obtener la cantidad
       const comprasRef = ref(db, "compras");
-      onValue(comprasRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          Object.entries(data).forEach(([uid, comprasUsuario]) => {
-            Object.entries(comprasUsuario).forEach(([compraId, compra]) => {
-              if (compra.productoId === id && compra.estado === "enviando") {
-                update(ref(db, `compras/${uid}/${compraId}`), { estado: "recibido" });
-              }
+      let cantidadComprada = 1;
+      await new Promise((resolve) => {
+        onValue(comprasRef, (snapshot) => {
+          const data = snapshot.val();
+          if (data) {
+            Object.entries(data).forEach(([uid, comprasUsuario]) => {
+              Object.entries(comprasUsuario).forEach(([compraId, compra]) => {
+                if (compra.productoId === id && compra.estado === "enviando") {
+                  cantidadComprada = compra.cantidad || 1;
+                  update(ref(db, `compras/${uid}/${compraId}`), { estado: "recibido" });
+                }
+              });
             });
-          });
-        }
-      }, { onlyOnce: true });
+          }
+          resolve();
+        }, { onlyOnce: true });
+      });
+      // Actualizar estado y descontar stock
       const productoSnap = await get(ref(db, `productos/${id}`));
       const producto = productoSnap.val();
+      const nuevoStock = producto && producto.stock ? Math.max(producto.stock - cantidadComprada, 0) : 0;
+      await update(ref(db, `productos/${id}`), { estado: "recibido", stock: nuevoStock });
+      // Repartidor gana dinero
       const precio = producto && producto.precio ? Number(producto.precio) : 0;
       const user = auth.currentUser;
       if (user) {
@@ -111,7 +176,7 @@ function DistribuidorProductos() {
         const userSnap = await get(userRef);
         const datos = userSnap.val();
         const dineroActual = datos && datos.dinero ? Number(datos.dinero) : 0;
-        const nuevoDinero = dineroActual + precio * 0.05;
+        const nuevoDinero = dineroActual + precio * 0.05 * cantidadComprada;
         await update(userRef, { dinero: nuevoDinero });
       }
     } catch (err) {
@@ -181,9 +246,24 @@ function DistribuidorProductos() {
                 <td>{farmacia ? farmacia.nombreFarmacia : prod.farmaciaId}</td>
                 <td>{distancia === null ? '-' : (distancia < 1000 ? Math.round(distancia) + ' m' : (distancia / 1000).toFixed(2) + ' km')}</td>
                 <td>
-                  <button onClick={() => handleRecibido(prod.id)} disabled={procesando === prod.id}>
-                    {procesando === prod.id ? "Procesando..." : "Marcar como recibido"}
-                  </button>
+                  {prod.estado === "enviando" && timers[prod.id] !== null && (
+                    <span style={{ color: timers[prod.id] <= 60 ? "red" : "black", fontWeight: "bold" }}>
+                      {timers[prod.id] > 0
+                        ? `Tiempo para aceptar: ${Math.floor(timers[prod.id] / 60)}:${(timers[prod.id] % 60).toString().padStart(2, "0")}`
+                        : "Pedido cancelado por tiempo"}
+                    </span>
+                  )}
+                  {prod.estado === "enviando" && timers[prod.id] > 0 && (
+                    <button onClick={() => handleRecibido(prod.id)} disabled={procesando === prod.id} style={{ marginLeft: "10px" }}>
+                      {procesando === prod.id ? "Procesando..." : "Marcar como recibido"}
+                    </button>
+                  )}
+                  {prod.estado === "cancelado" && (
+                    <span style={{ color: "red", fontWeight: "bold" }}>Pedido cancelado</span>
+                  )}
+                  {prod.estado === "recibido" && (
+                    <span style={{ color: "green", fontWeight: "bold" }}>Pedido entregado</span>
+                  )}
                 </td>
               </tr>
             ))}

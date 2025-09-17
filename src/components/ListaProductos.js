@@ -4,6 +4,7 @@ import { db, auth } from "../firebase";
 import Carrito from "./Carrito";
 
 const ListaProductos = ({ mostrarCarrito = true }) => {
+  const [comprasPendientes, setComprasPendientes] = useState({});
   const [productos, setProductos] = useState([]);
   const [filtroNombre, setFiltroNombre] = useState("");
   const [usuario, setUsuario] = useState(null);
@@ -14,6 +15,22 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   const [cantidades, setCantidades] = useState({});
 
   useEffect(() => {
+    // Consultar todas las compras en estado 'enviando' para cada producto
+    const comprasRef = ref(db, "compras");
+    onValue(comprasRef, (snapshot) => {
+      const data = snapshot.val();
+      const pendientes = {};
+      if (data) {
+        Object.values(data).forEach(usuarioCompras => {
+          Object.values(usuarioCompras).forEach(compra => {
+            if (compra.estado === "enviando") {
+              pendientes[compra.productoId] = (pendientes[compra.productoId] || 0) + (compra.cantidad || 1);
+            }
+          });
+        });
+      }
+      setComprasPendientes(pendientes);
+    });
     // Obtener datos del usuario actual
     const user = auth.currentUser;
     if (user) {
@@ -109,14 +126,20 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
     const producto = productos.find(p => p.id === id);
     if (!producto) return;
     const cantidad = cantidades[id] ? parseInt(cantidades[id]) : 1;
-    if (cantidad < 1 || cantidad > producto.stock) return;
-    // Si ya está en el carrito, suma la cantidad
+    // Calcular stock disponible
+    const pendientes = comprasPendientes[id] || 0;
+    const stockDisponible = producto.stock - pendientes;
+    // Si ya está en el carrito, sumar la cantidad total que tendría
     const idx = carrito.findIndex(p => p.id === id);
+    const cantidadEnCarrito = idx >= 0 ? (carrito[idx].cantidad || 1) : 0;
+    if (cantidad < 1 || (cantidad + cantidadEnCarrito) > stockDisponible) {
+      alert(`No puedes agregar ${cantidad} unidades. Stock disponible: ${stockDisponible - cantidadEnCarrito}`);
+      return;
+    }
+    // Si ya está en el carrito, suma la cantidad
     if (idx >= 0) {
       const nuevoCarrito = [...carrito];
-      nuevoCarrito[idx].cantidad = (nuevoCarrito[idx].cantidad || 1) + cantidad;
-      // No permitir superar el stock
-      if (nuevoCarrito[idx].cantidad > producto.stock) nuevoCarrito[idx].cantidad = producto.stock;
+      nuevoCarrito[idx].cantidad = cantidadEnCarrito + cantidad;
       setCarrito(nuevoCarrito);
     } else {
       setCarrito([...carrito, { ...producto, cantidad }]);
@@ -248,7 +271,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
               <tr key={prod.id}>
                 <td>{prod.nombre}</td>
                 <td>${prod.precio}</td>
-                <td>{prod.stock}</td>
+                <td>{prod.stock - (comprasPendientes[prod.id] || 0)}</td>
                 <td>{prod.farmacia ? prod.farmacia.nombreFarmacia : prod.farmaciaId}</td>
                 <td>{mostrarDistancia(prod.distancia)}</td>
                 <td>{
