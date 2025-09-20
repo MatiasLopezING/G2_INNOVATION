@@ -3,6 +3,7 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { ref, set } from 'firebase/database';
 import { auth, db } from '../firebase';
 import { useNavigate } from "react-router-dom";
+import HorariosFarmacia from './HorariosFarmacia';
 
 const Register = () => {
   const [step, setStep] = useState(1);
@@ -33,8 +34,9 @@ const Register = () => {
   const [lngFarmacia, setLngFarmacia] = useState('');
   const [coordStatusFarmacia, setCoordStatusFarmacia] = useState(null); // null, 'ok', 'fail'
   const [contactoFarmacia, setContactoFarmacia] = useState('');
-  const [obrasSocialesAceptadas, setObrasSocialesAceptadas] = useState('');
-  const [horarios, setHorarios] = useState('');
+  const [obrasSocialesAceptadas, setObrasSocialesAceptadas] = useState([]);
+  const [obraSocialInput, setObraSocialInput] = useState('');
+  const [horarios, setHorarios] = useState(null);
 
   // Delivery
   const [dniDelivery, setDniDelivery] = useState('');
@@ -214,8 +216,39 @@ const Register = () => {
                 )}
               </div>
               <input type="text" placeholder="Contacto" value={contactoFarmacia} onChange={e => setContactoFarmacia(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Obras sociales aceptadas" value={obrasSocialesAceptadas} onChange={e => setObrasSocialesAceptadas(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Horarios" value={horarios} onChange={e => setHorarios(e.target.value)} required style={{ width: '100%' }} />
+              <div style={{ width: '100%' }}>
+                <label>Obras sociales aceptadas:</label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <input
+                    type="text"
+                    placeholder="Agregar obra social"
+                    value={obraSocialInput}
+                    onChange={e => setObraSocialInput(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (obraSocialInput.trim() && !obrasSocialesAceptadas.includes(obraSocialInput.trim())) {
+                        setObrasSocialesAceptadas([...obrasSocialesAceptadas, obraSocialInput.trim()]);
+                        setObraSocialInput('');
+                      }
+                    }}
+                    style={{ padding: '8px' }}
+                  >Agregar</button>
+                </div>
+                <ul style={{ paddingLeft: '20px', marginBottom: '8px' }}>
+                  {obrasSocialesAceptadas.map((obra, idx) => (
+                    <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {obra}
+                      <button type="button" style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => {
+                        setObrasSocialesAceptadas(obrasSocialesAceptadas.filter((_, i) => i !== idx));
+                      }}>✖</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <HorariosFarmacia horarios={horarios} setHorarios={setHorarios} />
             </>
           )}
           {role === 'Distribuidor' && (

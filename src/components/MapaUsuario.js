@@ -3,6 +3,7 @@ import React from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
+import { getEstadoFarmacia } from '../utils/horariosUtils';
 
 const usuarioIcon = L.icon({
   iconUrl: process.env.PUBLIC_URL + "/icons/usuario.png",
@@ -40,13 +41,42 @@ function MapaUsuario({ usuario, farmacias, deliverys = [] }) {
         <Marker position={position} icon={usuarioIcon}>
           <Popup>Tu ubicación</Popup>
         </Marker>
-        {farmacias.map((farmacia) => (
-          farmacia.latitud && farmacia.longitud ? (
+        {farmacias.map((farmacia) => {
+          if (!farmacia.latitud || !farmacia.longitud) return null;
+          
+          const estado = getEstadoFarmacia(farmacia.horarios);
+          
+          return (
             <Marker key={farmacia.id} position={[Number(farmacia.latitud), Number(farmacia.longitud)]} icon={farmaciaIcon}>
-              <Popup>{farmacia.nombreFarmacia || farmacia.id}</Popup>
+              <Popup>
+                <div>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '16px' }}>
+                    {farmacia.nombreFarmacia || farmacia.id}
+                  </h4>
+                  <p style={{ margin: '4px 0', fontSize: '14px' }}>
+                    <strong>Estado:</strong> 
+                    <span style={{ 
+                      color: estado.abierta ? '#28a745' : '#dc3545',
+                      marginLeft: '4px'
+                    }}>
+                      {estado.mensaje}
+                    </span>
+                  </p>
+                  {farmacia.contactoFarmacia && (
+                    <p style={{ margin: '4px 0', fontSize: '14px' }}>
+                      <strong>Contacto:</strong> {farmacia.contactoFarmacia}
+                    </p>
+                  )}
+                  {!estado.abierta && estado.proximaApertura && (
+                    <p style={{ margin: '4px 0', fontSize: '12px', color: '#666' }}>
+                      <strong>Próxima apertura:</strong> {estado.proximaApertura}
+                    </p>
+                  )}
+                </div>
+              </Popup>
             </Marker>
-          ) : null
-        ))}
+          );
+        })}
         {deliverys.map((delivery) => (
           delivery.latitud && delivery.longitud ? (
             <Marker key={delivery.id} position={[Number(delivery.latitud), Number(delivery.longitud)]} icon={deliveryIcon}>

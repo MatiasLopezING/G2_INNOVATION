@@ -27,13 +27,14 @@ function FarmaciaVentas() {
   const handleVender = async (id) => {
     setMensaje("");
     const producto = productos.find(p => p.id === id);
-    if (!producto || producto.stock <= 0) {
+    if (!producto || !producto.stock || producto.stock <= 0) {
       setMensaje("No hay stock disponible.");
       return;
     }
     try {
-      await update(ref(db, `productos/${id}`), { stock: producto.stock - 1 });
-      setMensaje(`Venta realizada. Stock restante: ${producto.stock - 1}`);
+      const nuevoStock = Math.max(0, producto.stock - 1);
+      await update(ref(db, `productos/${id}`), { stock: nuevoStock });
+      setMensaje(`Venta realizada. Stock restante: ${nuevoStock}`);
     } catch (err) {
       setMensaje("Error al realizar la venta: " + err.message);
     }

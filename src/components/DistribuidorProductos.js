@@ -3,7 +3,7 @@ import React, { useEffect, useState } from "react";
 import { ref, onValue, update, get } from "firebase/database";
 import { db, auth } from "../firebase";
 
-const openRouteApiKey = "TU_API_KEY_AQUI"; // ⚠️ Ideal moverlo a backend
+const openRouteApiKey = process.env.REACT_APP_OPENROUTE_API_KEY || "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY5YjI1NzI1YmViMTQ1MWQ4OWVmYjhhM2E0YmJlM2NjIiwiaCI6Im11cm11cjY0In0=";
 
 function DistribuidorProductos() {
   // Declarar todos los useState al inicio
@@ -73,13 +73,19 @@ function DistribuidorProductos() {
     const productosRef = ref(db, "productos");
     const unsubscribeProductos = onValue(productosRef, (snapshot) => {
       const data = snapshot.val();
-      setProductos(
-        data
-          ? Object.entries(data)
-              .map(([id, p]) => ({ id, ...p }))
-              .filter((p) => p.estado === "enviando")
-          : []
-      );
+      console.log('=== DEBUG DISTRIBUIDOR ===');
+      console.log('Todos los productos:', data);
+      
+      const productosEnviando = data
+        ? Object.entries(data)
+            .map(([id, p]) => ({ id, ...p }))
+            .filter((p) => p.estado === "enviando")
+        : [];
+      
+      console.log('Productos en estado "enviando":', productosEnviando);
+      console.log('========================');
+      
+      setProductos(productosEnviando);
     });
 
     const farmaciasRef = ref(db, "users");
@@ -98,6 +104,26 @@ function DistribuidorProductos() {
       }
     });
 
+    // Debug: Verificar compras
+    const comprasRef = ref(db, "compras");
+    const unsubscribeCompras = onValue(comprasRef, (snapshot) => {
+      const data = snapshot.val();
+      console.log('=== DEBUG COMPRAS ===');
+      console.log('Todas las compras:', data);
+      if (data) {
+        const comprasEnviando = [];
+        Object.entries(data).forEach(([uid, comprasUsuario]) => {
+          Object.entries(comprasUsuario).forEach(([compraId, compra]) => {
+            if (compra.estado === "enviando") {
+              comprasEnviando.push({ uid, compraId, ...compra });
+            }
+          });
+        });
+        console.log('Compras en estado "enviando":', comprasEnviando);
+      }
+      console.log('====================');
+    });
+
     // Dinero del repartidor
     let unsubscribeDinero = () => {};
     const user = auth.currentUser;
@@ -112,6 +138,7 @@ function DistribuidorProductos() {
     return () => {
       unsubscribeProductos();
       unsubscribeFarmacias();
+      unsubscribeCompras();
       unsubscribeDinero();
     };
   }, []);
@@ -136,7 +163,8 @@ function DistribuidorProductos() {
       const distancia =
         data?.features?.[0]?.properties?.segments?.[0]?.distance || null;
       setDistanciasApi((prev) => ({ ...prev, [prodId]: distancia }));
-    } catch {
+    } catch (error) {
+      console.error('Error al calcular distancia:', error);
       setDistanciasApi((prev) => ({ ...prev, [prodId]: null }));
     }
   };

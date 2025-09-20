@@ -46,7 +46,7 @@ const HistorialCompras = () => {
                   compra.estado === "enviando" ? "Enviando" :
                   compra.estado === "recibido" ? "Recibido" : compra.estado
                 }</td>
-                <td>{new Date(compra.fecha).toLocaleString()}</td>
+                <td>{compra.fecha ? new Date(compra.fecha).toLocaleString() : 'Fecha no disponible'}</td>
               </tr>
             ))}
           </tbody>

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { ref, onValue, update, push } from "firebase/database";
 import { db, auth } from "../firebase";
 import Carrito from "./Carrito";
+import UploadRecetaSimple from "./UploadRecetaSimple";
+import { isFarmaciaAbierta, getEstadoFarmacia, debugHorarios } from '../utils/horariosUtils';
 
 const ListaProductos = ({ mostrarCarrito = true }) => {
   const [comprasPendientes, setComprasPendientes] = useState({});
@@ -10,9 +12,11 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   const [usuario, setUsuario] = useState(null);
   const [comprando, setComprando] = useState("");
   const [distanciasApi, setDistanciasApi] = useState({});
-  const openRouteApiKey = "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY5YjI1NzI1YmViMTQ1MWQ4OWVmYjhhM2E0YmJlM2NjIiwiaCI6Im11cm11cjY0In0=";
+  const openRouteApiKey = process.env.REACT_APP_OPENROUTE_API_KEY || "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY5YjI1NzI1YmViMTQ1MWQ4OWVmYjhhM2E0YmJlM2NjIiwiaCI6Im11cm11cjY0In0=";
   const [carrito, setCarrito] = useState([]);
   const [cantidades, setCantidades] = useState({});
+  const [mostrarUploadReceta, setMostrarUploadReceta] = useState(false);
+  const [productoParaReceta, setProductoParaReceta] = useState(null);
 
   useEffect(() => {
     // Consultar todas las compras en estado 'enviando' para cada producto
@@ -125,6 +129,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   const handleAgregarCarrito = (id) => {
     const producto = productos.find(p => p.id === id);
     if (!producto) return;
+    
     const cantidad = cantidades[id] ? parseInt(cantidades[id]) : 1;
     // Calcular stock disponible
     const pendientes = comprasPendientes[id] || 0;
@@ -136,6 +141,14 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
       alert(`No puedes agregar ${cantidad} unidades. Stock disponible: ${stockDisponible - cantidadEnCarrito}`);
       return;
     }
+    
+    // Si requiere receta, mostrar modal de upload
+    if (producto.requiereReceta) {
+      setProductoParaReceta({ ...producto, cantidad });
+      setMostrarUploadReceta(true);
+      return;
+    }
+    
     // Si ya está en el carrito, suma la cantidad
     if (idx >= 0) {
       const nuevoCarrito = [...carrito];
@@ -150,6 +163,41 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   // Eliminar producto del carrito
   const handleRemoveCarrito = (id) => {
     setCarrito(carrito.filter(p => p.id !== id));
+  };
+
+  // Manejar completar upload de receta
+  const handleRecetaCompletada = (imagenURL) => {
+    setMostrarUploadReceta(false);
+    
+    // Agregar producto al carrito después de subir receta
+    if (productoParaReceta) {
+      const cantidad = productoParaReceta.cantidad || 1;
+      
+      // Verificar si ya está en el carrito
+      const idx = carrito.findIndex(p => p.id === productoParaReceta.id);
+      if (idx >= 0) {
+        const nuevoCarrito = [...carrito];
+        nuevoCarrito[idx].cantidad = (nuevoCarrito[idx].cantidad || 1) + cantidad;
+        setCarrito(nuevoCarrito);
+      } else {
+        setCarrito([...carrito, { 
+          ...productoParaReceta, 
+          cantidad,
+          recetaSubida: true,
+          recetaURL: imagenURL
+        }]);
+      }
+      
+      setCantidades({ ...cantidades, [productoParaReceta.id]: 1 });
+    }
+    
+    setProductoParaReceta(null);
+  };
+
+  // Manejar cancelar upload de receta
+  const handleCancelarReceta = () => {
+    setMostrarUploadReceta(false);
+    setProductoParaReceta(null);
   };
 
   // Comprar todos los productos del carrito
@@ -229,6 +277,21 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
         farmacia,
         distancia: distanciasApi[prod.id] !== undefined ? distanciasApi[prod.id] : null
       };
+    })
+    .filter(prod => {
+      // Filtrar productos de farmacias cerradas
+      if (!prod.farmacia) {
+        console.log(`Producto ${prod.nombre} sin farmacia asociada`);
+        return false;
+      }
+      
+      const estaAbierta = isFarmaciaAbierta(prod.farmacia.horarios);
+      console.log(`Farmacia ${prod.farmacia.nombreFarmacia} para producto ${prod.nombre}:`, estaAbierta);
+      if (!estaAbierta) {
+        debugHorarios(prod.farmacia.horarios);
+      }
+      
+      return estaAbierta;
     });
 
   // Ordenar por distancia
@@ -261,24 +324,58 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
               <th>Precio</th>
               <th>Stock</th>
               <th>Farmacia</th>
+              <th>Estado Farmacia</th>
+              <th>Receta</th>
               <th>Distancia</th>
               <th>Estado</th>
               <th>Acción</th>
             </tr>
           </thead>
           <tbody>
-            {productosConDistancia.map((prod) => (
-              <tr key={prod.id}>
-                <td>{prod.nombre}</td>
-                <td>${prod.precio}</td>
-                <td>{prod.stock - (comprasPendientes[prod.id] || 0)}</td>
-                <td>{prod.farmacia ? prod.farmacia.nombreFarmacia : prod.farmaciaId}</td>
-                <td>{mostrarDistancia(prod.distancia)}</td>
-                <td>{
-                  prod.estado === "por_comprar" ? "Por comprar" :
-                  prod.estado === "enviando" ? "Enviando" :
-                  prod.estado === "recibido" ? "Recibido" : prod.estado
-                }</td>
+            {productosConDistancia.map((prod) => {
+              const estadoFarmacia = getEstadoFarmacia(prod.farmacia?.horarios);
+              return (
+                <tr key={prod.id}>
+                  <td>{prod.nombre}</td>
+                  <td>${prod.precio}</td>
+                  <td>{prod.stock - (comprasPendientes[prod.id] || 0)}</td>
+                  <td>{prod.farmacia ? prod.farmacia.nombreFarmacia : prod.farmaciaId}</td>
+                  <td>
+                    <span style={{
+                      color: estadoFarmacia.abierta ? '#28a745' : '#dc3545',
+                      fontWeight: 'bold',
+                      fontSize: '12px'
+                    }}>
+                      {estadoFarmacia.abierta ? '🟢 Abierta' : '🔴 Cerrada'}
+                    </span>
+                    {!estadoFarmacia.abierta && (
+                      <div style={{ fontSize: '10px', color: '#666' }}>
+                        {estadoFarmacia.mensaje}
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    {prod.requiereReceta ? (
+                      <span style={{
+                        backgroundColor: '#ffc107',
+                        color: '#856404',
+                        padding: '2px 6px',
+                        borderRadius: '3px',
+                        fontSize: '11px',
+                        fontWeight: 'bold'
+                      }}>
+                        📋 Receta
+                      </span>
+                    ) : (
+                      <span style={{ color: '#6c757d', fontSize: '12px' }}>-</span>
+                    )}
+                  </td>
+                  <td>{mostrarDistancia(prod.distancia)}</td>
+                  <td>{
+                    prod.estado === "por_comprar" ? "Por comprar" :
+                    prod.estado === "enviando" ? "Enviando" :
+                    prod.estado === "recibido" ? "Recibido" : prod.estado
+                  }</td>
                 <td>
                   {prod.estado === "por_comprar" ? (
                     <>
@@ -297,9 +394,20 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
                   ) : null}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
+      )}
+
+      {/* Modal para subir receta médica */}
+      {mostrarUploadReceta && productoParaReceta && (
+        <UploadRecetaSimple
+          producto={productoParaReceta}
+          farmaciaId={productoParaReceta.farmaciaId}
+          onUploadComplete={handleRecetaCompletada}
+          onCancel={handleCancelarReceta}
+        />
       )}
     </div>
   );

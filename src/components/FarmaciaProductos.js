@@ -6,6 +6,7 @@ const FarmaciaProductos = () => {
   const [nombre, setNombre] = useState("");
   const [precio, setPrecio] = useState("");
   const [stock, setStock] = useState("");
+  const [requiereReceta, setRequiereReceta] = useState(false);
   const [mensaje, setMensaje] = useState("");
 
   const handleSubmit = async (e) => {
@@ -21,13 +22,15 @@ const FarmaciaProductos = () => {
         nombre,
         precio: Number(precio),
         stock: Number(stock),
+        requiereReceta,
         farmaciaId: user.uid,
         estado: "por_comprar"
       });
       setMensaje("Producto agregado correctamente.");
-  setNombre("");
-  setPrecio("");
-  setStock("");
+      setNombre("");
+      setPrecio("");
+      setStock("");
+      setRequiereReceta(false);
     } catch (err) {
       setMensaje("Error al agregar producto: " + err.message);
     }
@@ -66,6 +69,16 @@ const FarmaciaProductos = () => {
             required
             style={{ width: "100%", marginBottom: "10px" }}
           />
+        </div>
+        <div>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <input
+              type="checkbox"
+              checked={requiereReceta}
+              onChange={(e) => setRequiereReceta(e.target.checked)}
+            />
+            Requiere receta médica
+          </label>
         </div>
         <button type="submit" style={{ width: "100%" }}>
           Agregar
