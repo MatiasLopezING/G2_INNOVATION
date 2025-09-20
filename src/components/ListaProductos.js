@@ -12,7 +12,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   const [usuario, setUsuario] = useState(null);
   const [comprando, setComprando] = useState("");
   const [distanciasApi, setDistanciasApi] = useState({});
-  const openRouteApiKey = process.env.REACT_APP_OPENROUTE_API_KEY || "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY5YjI1NzI1YmViMTQ1MWQ4OWVmYjhhM2E0YmJlM2NjIiwiaCI6Im11cm11cjY0In0=";
+  const openRouteApiKey = process.env.REACT_APP_OPENROUTE_API_KEY;
   const [carrito, setCarrito] = useState([]);
   const [cantidades, setCantidades] = useState({});
   const [mostrarUploadReceta, setMostrarUploadReceta] = useState(false);
@@ -77,15 +77,16 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
       precioFinal = precioFinal * 0.9;
     }
     try {
-      // Cambiar estado del producto a 'enviando'
-      await update(ref(db, `productos/${id}`), { estado: "enviando" });
+  // Cambiar estado del producto a 'enviando', guardar la fecha y el usuarioId
+  const fechaCompra = new Date().toISOString();
+  await update(ref(db, `productos/${id}`), { estado: "enviando", fecha: fechaCompra, usuarioId: user.uid });
       // Guardar la compra en el nodo 'compras' del usuario
       await push(ref(db, `compras/${user.uid}`), {
         productoId: id,
         nombre: producto.nombre,
         precio: precioFinal,
         estado: "enviando",
-        fecha: new Date().toISOString(),
+        fecha: fechaCompra,
         farmaciaId: producto.farmaciaId
       });
     } catch (err) {
