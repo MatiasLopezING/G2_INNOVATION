@@ -1,3 +1,10 @@
+/**
+ * Componente para login de usuario.
+ * Props:
+ *   - botonMargin: margen inferior del botón de login
+ *   - botonRegistro: función para mostrar registro
+ */
+
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";

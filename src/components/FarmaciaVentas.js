@@ -1,8 +1,14 @@
+/**
+ * Componente para mostrar y vender productos físicos en la farmacia.
+ * Permite actualizar el stock tras cada venta.
+ *
+ * No recibe props. Utiliza Firebase para obtener y actualizar productos.
+ */
 import React, { useEffect, useState } from "react";
 import { ref, onValue, update } from "firebase/database";
 import { db, auth } from "../firebase";
 
-function FarmaciaVentas() {
+const FarmaciaVentas = () => {
   const [productos, setProductos] = useState([]);
   const [mensaje, setMensaje] = useState("");
 
@@ -15,7 +21,7 @@ function FarmaciaVentas() {
       if (data) {
         const lista = Object.entries(data)
           .map(([id, prod]) => ({ id, ...prod }))
-          .filter(p => p.farmaciaId === user.uid);
+          .filter((p) => p.farmaciaId === user.uid);
         setProductos(lista);
       } else {
         setProductos([]);
@@ -24,9 +30,10 @@ function FarmaciaVentas() {
     return () => unsubscribe();
   }, []);
 
-  const handleVender = async (id) => {
+  // Vende un producto y actualiza el stock
+  const venderProducto = async (id) => {
     setMensaje("");
-    const producto = productos.find(p => p.id === id);
+    const producto = productos.find((p) => p.id === id);
     if (!producto || !producto.stock || producto.stock <= 0) {
       setMensaje("No hay stock disponible.");
       return;
@@ -43,7 +50,11 @@ function FarmaciaVentas() {
   return (
     <div style={{ maxWidth: "600px", margin: "auto", padding: "20px" }}>
       <h2>Venta física en local</h2>
-      {mensaje && <p style={{ color: mensaje.includes("Error") ? "red" : "green" }}>{mensaje}</p>}
+      {mensaje && (
+        <p style={{ color: mensaje.includes("Error") ? "red" : "green" }}>
+          {mensaje}
+        </p>
+      )}
       {productos.length === 0 ? (
         <p>No hay productos cargados.</p>
       ) : (
@@ -63,7 +74,10 @@ function FarmaciaVentas() {
                 <td>${prod.precio}</td>
                 <td>{prod.stock}</td>
                 <td>
-                  <button onClick={() => handleVender(prod.id)} disabled={prod.stock <= 0}>
+                  <button
+                    onClick={() => venderProducto(prod.id)}
+                    disabled={prod.stock <= 0}
+                  >
                     Vender
                   </button>
                 </td>
@@ -74,6 +88,6 @@ function FarmaciaVentas() {
       )}
     </div>
   );
-}
+};
 
 export default FarmaciaVentas;

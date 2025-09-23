@@ -1,9 +1,16 @@
-
 import React from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { getEstadoFarmacia } from '../utils/horariosUtils';
+
+/**
+ * Componente para mostrar el mapa del usuario, farmacias y deliverys.
+ * Props:
+ *   - usuario: objeto con datos del usuario
+ *   - farmacias: array de farmacias
+ *   - deliverys: array de deliverys (opcional)
+ */
 
 const usuarioIcon = L.icon({
   iconUrl: process.env.PUBLIC_URL + "/icons/usuario.png",

@@ -1,43 +1,50 @@
-import React, { useState } from "react";
-import { ref, push } from "firebase/database";
-import { db, auth } from "../firebase";
+/**
+ * Componente para agregar productos a la farmacia.
+ * Permite registrar nombre, precio, stock y si requiere receta médica.
+ *
+ * No recibe props. Utiliza Firebase para guardar productos.
+ */
+import React, { useState } from 'react';
+import { ref, push } from 'firebase/database';
+import { db, auth } from '../firebase';
 
 const FarmaciaProductos = () => {
-  const [nombre, setNombre] = useState("");
-  const [precio, setPrecio] = useState("");
-  const [stock, setStock] = useState("");
+  const [nombre, setNombre] = useState('');
+  const [precio, setPrecio] = useState('');
+  const [stock, setStock] = useState('');
   const [requiereReceta, setRequiereReceta] = useState(false);
-  const [mensaje, setMensaje] = useState("");
+  const [mensaje, setMensaje] = useState('');
 
+  // Envía el producto a la base de datos
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMensaje("");
+    setMensaje('');
     const user = auth.currentUser;
     if (!user) {
-      setMensaje("Debes iniciar sesión como farmacia.");
+      setMensaje('Debes iniciar sesión como farmacia.');
       return;
     }
     try {
-      await push(ref(db, "productos"), {
+      await push(ref(db, 'productos'), {
         nombre,
         precio: Number(precio),
         stock: Number(stock),
         requiereReceta,
         farmaciaId: user.uid,
-        estado: "por_comprar"
+        estado: 'por_comprar'
       });
-      setMensaje("Producto agregado correctamente.");
-      setNombre("");
-      setPrecio("");
-      setStock("");
+      setMensaje('Producto agregado correctamente.');
+      setNombre('');
+      setPrecio('');
+      setStock('');
       setRequiereReceta(false);
     } catch (err) {
-      setMensaje("Error al agregar producto: " + err.message);
+      setMensaje('Error al agregar producto: ' + err.message);
     }
   };
 
   return (
-    <div style={{ maxWidth: "400px", margin: "auto", padding: "20px" }}>
+    <div style={{ maxWidth: '400px', margin: 'auto', padding: '20px' }}>
       <h2>Agregar Producto</h2>
       <form onSubmit={handleSubmit}>
         <div>
@@ -45,9 +52,9 @@ const FarmaciaProductos = () => {
           <input
             type="text"
             value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
+            onChange={e => setNombre(e.target.value)}
             required
-            style={{ width: "100%", marginBottom: "10px" }}
+            style={{ width: '100%', marginBottom: '10px' }}
           />
         </div>
         <div>
@@ -55,9 +62,9 @@ const FarmaciaProductos = () => {
           <input
             type="number"
             value={precio}
-            onChange={(e) => setPrecio(e.target.value)}
+            onChange={e => setPrecio(e.target.value)}
             required
-            style={{ width: "100%", marginBottom: "10px" }}
+            style={{ width: '100%', marginBottom: '10px' }}
           />
         </div>
         <div>
@@ -65,26 +72,24 @@ const FarmaciaProductos = () => {
           <input
             type="number"
             value={stock}
-            onChange={(e) => setStock(e.target.value)}
+            onChange={e => setStock(e.target.value)}
             required
-            style={{ width: "100%", marginBottom: "10px" }}
+            style={{ width: '100%', marginBottom: '10px' }}
           />
         </div>
         <div>
-          <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <input
               type="checkbox"
               checked={requiereReceta}
-              onChange={(e) => setRequiereReceta(e.target.checked)}
+              onChange={e => setRequiereReceta(e.target.checked)}
             />
             Requiere receta médica
           </label>
         </div>
-        <button type="submit" style={{ width: "100%" }}>
-          Agregar
-        </button>
+        <button type="submit" style={{ marginTop: '12px' }}>Agregar</button>
       </form>
-      {mensaje && <p style={{ color: mensaje.includes("Error") ? "red" : "green" }}>{mensaje}</p>}
+      {mensaje && <p style={{ color: mensaje.includes('Error') ? 'red' : 'green' }}>{mensaje}</p>}
     </div>
   );
 };

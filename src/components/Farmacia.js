@@ -1,3 +1,9 @@
+/**
+ * Componente principal de la farmacia.
+ * Permite alternar entre revisión de recetas y gestión de productos/ventas.
+ *
+ * No recibe props. Utiliza componentes internos para la lógica principal.
+ */
 import React, { useState } from 'react';
 import FarmaciaProductos from './FarmaciaProductos';
 import FarmaciaVentas from './FarmaciaVentas';
@@ -7,11 +13,10 @@ const Farmacia = () => {
   const [mostrarRecetas, setMostrarRecetas] = useState(false);
 
   return (
-    <div style={{background:'#fff', minHeight:'100vh', padding:'20px'}}>
+    <div style={{ background: '#fff', minHeight: '100vh', padding: '20px' }}>
       <h1>Farmacia</h1>
-      
       <div style={{ marginBottom: '20px' }}>
-        <button 
+        <button
           onClick={() => setMostrarRecetas(!mostrarRecetas)}
           style={{
             padding: '10px 20px',
@@ -27,7 +32,6 @@ const Farmacia = () => {
           {mostrarRecetas ? 'Ocultar Recetas' : '📋 Revisar Recetas Médicas'}
         </button>
       </div>
-
       {mostrarRecetas ? (
         <RevisionRecetas />
       ) : (

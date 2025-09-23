@@ -1,12 +1,19 @@
+/**
+ * Componente principal para el panel del distribuidor.
+ * Muestra productos, farmacias, usuarios y gestiona pedidos.
+ * No recibe props.
+ */
 
 import React, { useEffect, useState } from "react";
-import { ref, onValue, update, get } from "firebase/database";
+import { ref, onValue } from "firebase/database";
 import { db, auth } from "../firebase";
+import { updateCompraEstado, updateProductoEstado, eliminarCompraYProducto } from "../utils/firebaseUtils";
 
-const openRouteApiKey = process.env.REACT_APP_OPENROUTE_API_KEY || "eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjY5YjI1NzI1YmViMTQ1MWQ4OWVmYjhhM2E0YmJlM2NjIiwiaCI6Im11cm11cjY0In0=";
+const openRouteApiKey = process.env.REACT_APP_OPENROUTE_API_KEY;
 
+// Componente principal para el panel del distribuidor
 function DistribuidorProductos() {
-  // Declarar todos los useState al inicio
+  // Estados principales
   const [productos, setProductos] = useState([]);
   const [farmacias, setFarmacias] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
@@ -15,6 +22,7 @@ function DistribuidorProductos() {
   const [distanciasApi, setDistanciasApi] = useState({});
   const [timers, setTimers] = useState({});
 
+  // Timer para pedidos en estado "enviando"
   useEffect(() => {
     if (!Array.isArray(productos)) return;
     const interval = setInterval(() => {
@@ -25,7 +33,7 @@ function DistribuidorProductos() {
             const pedidoTime = Date.parse(p.fecha);
             if (!isNaN(pedidoTime)) {
               const now = Date.now();
-              const diff = Math.max(0, 600 - Math.floor((now - pedidoTime) / 1000)); // 10 min = 600 seg
+              const diff = Math.max(0, 600 - Math.floor((now - pedidoTime) / 1000)); // 10 minutos para aceptar
               nuevos[p.id] = diff;
             } else {
               nuevos[p.id] = null;
@@ -40,51 +48,49 @@ function DistribuidorProductos() {
     return () => clearInterval(interval);
   }, [productos]);
 
+  // Cancelar pedidos expirados y reponer stock SOLO si sigue en estado 'enviando'
   useEffect(() => {
-    // Cancelar pedidos expirados y reponer stock
     productos.forEach(async (p) => {
       if (p.fecha && timers[p.id] === 0 && p.estado === "enviando") {
-        // Buscar compra asociada
-        const comprasRef = ref(db, "compras");
-        onValue(comprasRef, (snapshot) => {
-          const data = snapshot.val();
-          if (data) {
-            Object.entries(data).forEach(([uid, comprasUsuario]) => {
-              Object.entries(comprasUsuario).forEach(([compraId, compra]) => {
-                if (compra.productoId === p.id && compra.estado === "enviando") {
-                  // Cambiar estado a cancelado
-                  update(ref(db, `compras/${uid}/${compraId}`), { estado: "cancelado" });
-                  // Reponer stock
-                  get(ref(db, `productos/${p.id}`)).then((snap) => {
-                    const prod = snap.val();
-                    const nuevoStock = prod && prod.stock ? prod.stock + (compra.cantidad || 1) : (compra.cantidad || 1);
-                    update(ref(db, `productos/${p.id}`), { estado: "por_comprar", stock: nuevoStock });
-                  });
-                }
-              });
-            });
-          }
-        }, { onlyOnce: true });
+        await eliminarCompraYProducto(p.id);
+        window.alert("No se pudo realizar la compra ya que no hay deliverys disponibles. Intenta nuevamente.");
       }
     });
   }, [timers, productos]);
+  // Handler para aceptar pedido
+  const handleAceptarPedido = async (id) => {
+    setProcesando(id);
+    try {
+      await updateProductoEstado(id, "aceptado");
+      await updateCompraEstado(id, "aceptado");
+    } catch (err) {
+      alert("Error al aceptar pedido: " + err.message);
+    }
+    setProcesando("");
+  };
 
+  // Handler para marcar pedido como entregado
+  const handlePedidoEntregado = async (id) => {
+    setProcesando(id);
+    try {
+      await updateCompraEstado(id, "recibido");
+      await updateProductoEstado(id, "recibido");
+    } catch (err) {
+      alert("Error al actualizar estado: " + err.message);
+    }
+    setProcesando("");
+  };
+
+  // Carga inicial de productos, farmacias, usuarios y dinero
   useEffect(() => {
     const productosRef = ref(db, "productos");
     const unsubscribeProductos = onValue(productosRef, (snapshot) => {
       const data = snapshot.val();
-      console.log('=== DEBUG DISTRIBUIDOR ===');
-      console.log('Todos los productos:', data);
-      
       const productosEnviando = data
         ? Object.entries(data)
             .map(([id, p]) => ({ id, ...p }))
             .filter((p) => p.estado === "enviando")
         : [];
-      
-      console.log('Productos en estado "enviando":', productosEnviando);
-      console.log('========================');
-      
       setProductos(productosEnviando);
     });
 
@@ -104,26 +110,6 @@ function DistribuidorProductos() {
       }
     });
 
-    // Debug: Verificar compras
-    const comprasRef = ref(db, "compras");
-    const unsubscribeCompras = onValue(comprasRef, (snapshot) => {
-      const data = snapshot.val();
-      console.log('=== DEBUG COMPRAS ===');
-      console.log('Todas las compras:', data);
-      if (data) {
-        const comprasEnviando = [];
-        Object.entries(data).forEach(([uid, comprasUsuario]) => {
-          Object.entries(comprasUsuario).forEach(([compraId, compra]) => {
-            if (compra.estado === "enviando") {
-              comprasEnviando.push({ uid, compraId, ...compra });
-            }
-          });
-        });
-        console.log('Compras en estado "enviando":', comprasEnviando);
-      }
-      console.log('====================');
-    });
-
     // Dinero del repartidor
     let unsubscribeDinero = () => {};
     const user = auth.currentUser;
@@ -138,11 +124,11 @@ function DistribuidorProductos() {
     return () => {
       unsubscribeProductos();
       unsubscribeFarmacias();
-      unsubscribeCompras();
       unsubscribeDinero();
     };
   }, []);
 
+  // Calcula la distancia entre usuario y farmacia usando la API
   const distanciaPorCalles = async (usuario, farmacia, prodId) => {
     if (!usuario?.lat || !farmacia?.lat) return;
     try {
@@ -164,73 +150,26 @@ function DistribuidorProductos() {
         data?.features?.[0]?.properties?.segments?.[0]?.distance || null;
       setDistanciasApi((prev) => ({ ...prev, [prodId]: distancia }));
     } catch (error) {
-      console.error('Error al calcular distancia:', error);
       setDistanciasApi((prev) => ({ ...prev, [prodId]: null }));
     }
   };
 
-  const handleRecibido = async (id) => {
-    setProcesando(id);
-    try {
-      // Buscar la compra asociada para obtener la cantidad
-      const comprasRef = ref(db, "compras");
-      let cantidadComprada = 1;
-      await new Promise((resolve) => {
-        onValue(comprasRef, (snapshot) => {
-          const data = snapshot.val();
-          if (data) {
-            Object.entries(data).forEach(([uid, comprasUsuario]) => {
-              Object.entries(comprasUsuario).forEach(([compraId, compra]) => {
-                if (compra.productoId === id && compra.estado === "enviando") {
-                  cantidadComprada = compra.cantidad || 1;
-                  update(ref(db, `compras/${uid}/${compraId}`), { estado: "recibido" });
-                }
-              });
-            });
-          }
-          resolve();
-        }, { onlyOnce: true });
-      });
-      // Actualizar estado y descontar stock
-      const productoSnap = await get(ref(db, `productos/${id}`));
-      const producto = productoSnap.val();
-      const nuevoStock = producto && producto.stock ? Math.max(producto.stock - cantidadComprada, 0) : 0;
-      await update(ref(db, `productos/${id}`), { estado: "recibido", stock: nuevoStock });
-      // Repartidor gana dinero
-      const precio = producto && producto.precio ? Number(producto.precio) : 0;
-      const user = auth.currentUser;
-      if (user) {
-        const userRef = ref(db, `users/${user.uid}`);
-        const userSnap = await get(userRef);
-        const datos = userSnap.val();
-        const dineroActual = datos && datos.dinero ? Number(datos.dinero) : 0;
-        const nuevoDinero = dineroActual + precio * 0.05 * cantidadComprada;
-        await update(userRef, { dinero: nuevoDinero });
-      }
-    } catch (err) {
-      alert("Error al actualizar estado: " + err.message);
-    }
-    setProcesando("");
-  };
-
-  // Calcular productos con farmacia, usuario y distancia antes del return
+  // Calcular productos con farmacia, usuario y distancia antes del render
   const productosConDistancia = productos
     .map((prod) => {
       const farmacia = farmacias.find(f => f.id === prod.farmaciaId);
       let usuarioCompra = null;
-      if (usuarios.length > 0) {
-        for (const u of usuarios) {
-          if (u.compras) {
-            for (const compraId in u.compras) {
-              const compra = u.compras[compraId];
-              if (compra.productoId === prod.id && compra.estado === "enviando") {
-                usuarioCompra = u;
-                break;
-              }
+      for (const u of usuarios) {
+        if (u.compras) {
+          for (const compraId in u.compras) {
+            const compra = u.compras[compraId];
+            if (compra.productoId === prod.id && compra.estado === "enviando") {
+              usuarioCompra = u;
+              break;
             }
           }
-          if (usuarioCompra) break;
         }
+        if (usuarioCompra) break;
       }
       // Llamar a la API solo si no está calculado
       if (farmacia && usuarioCompra && prod.id && distanciasApi[prod.id] === undefined) {
@@ -274,6 +213,7 @@ function DistribuidorProductos() {
                 <td>{farmacia ? farmacia.nombreFarmacia : prod.farmaciaId}</td>
                 <td>{distancia === null ? '-' : (distancia < 1000 ? Math.round(distancia) + ' m' : (distancia / 1000).toFixed(2) + ' km')}</td>
                 <td>
+                  {/* Estado ENVIANDO: mostrar timer y botón aceptar */}
                   {prod.estado === "enviando" && timers[prod.id] !== null && (
                     <span style={{ color: timers[prod.id] <= 60 ? "red" : "black", fontWeight: "bold" }}>
                       {timers[prod.id] > 0
@@ -282,13 +222,21 @@ function DistribuidorProductos() {
                     </span>
                   )}
                   {prod.estado === "enviando" && timers[prod.id] > 0 && (
-                    <button onClick={() => handleRecibido(prod.id)} disabled={procesando === prod.id} style={{ marginLeft: "10px" }}>
-                      {procesando === prod.id ? "Procesando..." : "Marcar como recibido"}
+                    <button onClick={() => handleAceptarPedido(prod.id)} disabled={procesando === prod.id} style={{ marginLeft: "10px" }}>
+                      {procesando === prod.id ? "Procesando..." : "Aceptar pedido"}
                     </button>
                   )}
+                  {/* Estado ACEPTADO: mostrar botón entregar */}
+                  {prod.estado === "aceptado" && (
+                    <button onClick={() => handlePedidoEntregado(prod.id)} disabled={procesando === prod.id} style={{ marginLeft: "10px", backgroundColor: "#4caf50", color: "white" }}>
+                      {procesando === prod.id ? "Procesando..." : "Pedido entregado"}
+                    </button>
+                  )}
+                  {/* Estado CANCELADO: mensaje */}
                   {prod.estado === "cancelado" && (
                     <span style={{ color: "red", fontWeight: "bold" }}>Pedido cancelado</span>
                   )}
+                  {/* Estado RECIBIDO: mensaje */}
                   {prod.estado === "recibido" && (
                     <span style={{ color: "green", fontWeight: "bold" }}>Pedido entregado</span>
                   )}

@@ -1,3 +1,8 @@
+/**
+ * Componente para registro de usuarios, farmacias y deliverys.
+ * No recibe props. Utiliza pasos y formularios según el rol seleccionado.
+ */
+
 import React, { useState } from 'react';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { ref, set } from 'firebase/database';
