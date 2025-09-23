@@ -15,7 +15,7 @@ import { isFarmaciaAbierta, getEstadoFarmacia } from '../utils/horariosUtils';
 // Componente principal para mostrar y gestionar productos disponibles
 const ListaProductos = ({ mostrarCarrito = true }) => {
   // Estado: compras pendientes por producto
-  const [comprasPendientes, setComprasPendientes] = useState({});
+
   // Estado: lista de productos disponibles
   const [productos, setProductos] = useState([]);
   // Estado: filtro de búsqueda por nombre
@@ -52,7 +52,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
           });
         });
       }
-      setComprasPendientes(pendientes);
+
     });
     // 2. Obtener datos del usuario actual
     const user = auth.currentUser;
@@ -160,7 +160,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   /**
    * Handler cuando se completa la subida de receta
    */
-  const onRecetaSubida = useCallback((imagenURL) => {
+  const onRecetaSubida = useCallback((imagenURL, recetaId) => {
     setMostrarUploadReceta(false);
     if (productoParaReceta) {
       const cantidad = productoParaReceta.cantidad || 1;
@@ -168,13 +168,17 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
       if (idx >= 0) {
         const nuevoCarrito = [...carrito];
         nuevoCarrito[idx].cantidad = (nuevoCarrito[idx].cantidad || 1) + cantidad;
+        nuevoCarrito[idx].recetaSubida = true;
+        nuevoCarrito[idx].recetaURL = imagenURL;
+        nuevoCarrito[idx].recetaId = recetaId;
         setCarrito(nuevoCarrito);
       } else {
         setCarrito([...carrito, {
           ...productoParaReceta,
           cantidad,
           recetaSubida: true,
-          recetaURL: imagenURL
+          recetaURL: imagenURL,
+          recetaId: recetaId
         }]);
       }
       setCantidades({ ...cantidades, [productoParaReceta.id]: 1 });

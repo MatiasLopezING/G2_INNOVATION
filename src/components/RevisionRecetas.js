@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { ref, onValue, update, push, remove } from 'firebase/database';
 import { db, auth } from '../firebase';
+import { actualizarCompraAEnviandoPorProducto } from '../utils/firebaseUtils';
 
 const RevisionRecetas = () => {
   const [recetas, setRecetas] = useState([]);
@@ -23,7 +24,7 @@ const RevisionRecetas = () => {
       if (data) {
         const lista = Object.entries(data)
           .map(([id, receta]) => ({ id, ...receta }))
-          .filter(receta => receta.farmaciaId === user.uid && receta.estado === 'pendiente');
+          .filter(receta => receta.farmaciaId === user.uid && receta.estado === 'pendiente'); // Solo recetas pagadas
         setRecetas(lista);
       } else {
         setRecetas([]);
@@ -46,6 +47,10 @@ const RevisionRecetas = () => {
         estado: 'por_comprar',
         recetaAprobada: true
       });
+      // Actualiza la compra asociada a 'enviando'
+      if (user && productoId) {
+        await actualizarCompraAEnviandoPorProducto(productoId, user.uid);
+      }
       // Notifica al usuario
       const recetaSnapshot = await new Promise(resolve => {
         onValue(ref(db, `recetas/${recetaId}`), snapshot => resolve(snapshot.val()), { onlyOnce: true });

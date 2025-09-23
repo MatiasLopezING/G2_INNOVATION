@@ -8,9 +8,25 @@
  */
 
 import React from "react";
+import { actualizarEstadoReceta, ESTADOS_RECETA, actualizarCompraAEnviandoPorProducto } from '../utils/firebaseUtils';
 
 // Componente Carrito: muestra los productos agregados y permite eliminarlos o comprar todos
 function Carrito({ carrito, onRemove, onComprar }) {
+  // Función de pago: actualiza estado de recetas y compras
+  const handleComprar = async () => {
+    const userId = (window.firebaseAuth && window.firebaseAuth.currentUser && window.firebaseAuth.currentUser.uid) || (window.auth && window.auth.currentUser && window.auth.currentUser.uid);
+    for (const prod of carrito) {
+      if (prod.recetaSubida && prod.recetaId) {
+        await actualizarEstadoReceta(prod.recetaId, ESTADOS_RECETA.PENDIENTE);
+      } else {
+        // Si no requiere receta, actualiza compra a 'enviando'
+        if (userId && prod.id) {
+          await actualizarCompraAEnviandoPorProducto(prod.id, userId);
+        }
+      }
+    }
+    if (onComprar) onComprar();
+  };
   // Calcula el total del carrito
   const total = carrito.reduce((acc, prod) => {
     const precio = Number(prod.precio) || 0;
@@ -50,7 +66,7 @@ function Carrito({ carrito, onRemove, onComprar }) {
         </table>
       )}
       <div style={{ fontWeight: "bold", marginBottom: "10px" }}>Total: ${total.toFixed(2)}</div>
-      <button onClick={onComprar} disabled={carrito.length === 0} style={{ padding: "8px 16px", fontWeight: "bold", background: "#28a745", color: "#fff", border: "none", borderRadius: "5px", cursor: carrito.length === 0 ? "not-allowed" : "pointer" }}>
+      <button onClick={handleComprar} disabled={carrito.length === 0} style={{ padding: "8px 16px", fontWeight: "bold", background: "#28a745", color: "#fff", border: "none", borderRadius: "5px", cursor: carrito.length === 0 ? "not-allowed" : "pointer" }}>
         Comprar todo
       </button>
     </div>

@@ -1,7 +1,41 @@
-// Funciones utilitarias para lógica repetida de productos y compras
-// Utilidades para manipulación de productos y compras en Firebase
 import { ref, onValue, update, get } from "firebase/database";
 import { db } from "../firebase";
+// Actualiza el estado de la compra a 'enviando' para un producto y usuario
+export async function actualizarCompraAEnviandoPorProducto(productoId, userId) {
+  const comprasRef = ref(db, `compras/${userId}`);
+  const snapshot = await get(comprasRef);
+  const compras = snapshot.val();
+  if (compras) {
+    Object.entries(compras).forEach(async ([compraId, compra]) => {
+      if (compra.productoId === productoId && compra.estado !== ESTADOS_COMPRA.ENVIANDO) {
+        await update(ref(db, `compras/${userId}/${compraId}`), { estado: ESTADOS_COMPRA.ENVIANDO });
+      }
+    });
+  }
+}
+// Estados recomendados para recetas y compras
+export const ESTADOS_RECETA = {
+  POR_ACEPTAR: 'por_aceptar', // Receta subida, esperando pago
+  PENDIENTE: 'pendiente',     // Pagada, esperando revisión
+  ACEPTADA: 'aceptada',
+  RECHAZADA: 'rechazada',
+};
+
+export const ESTADOS_COMPRA = {
+  POR_COMPRAR: 'por_comprar',
+  ENVIANDO: 'enviando',
+  RECIBIDO: 'recibido',
+};
+
+// Actualiza el estado de una receta
+export async function actualizarEstadoReceta(recetaId, nuevoEstado) {
+  await update(ref(db, `recetas/${recetaId}`), { estado: nuevoEstado });
+}
+
+// Actualiza el estado de una compra
+export async function actualizarEstadoCompra(compraId, userId, nuevoEstado) {
+  await update(ref(db, `compras/${userId}/${compraId}`), { estado: nuevoEstado });
+}
 
 // Itera sobre todas las compras y ejecuta una acción para cada compra que cumpla la condición
 async function forEachCompra(condicion, accion) {

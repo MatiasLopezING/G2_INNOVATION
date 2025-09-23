@@ -1,17 +1,33 @@
 // Utilidad para validar si una farmacia está abierta según su horario
 
+// Funciones utilitarias para fechas y horarios
+export const getDiasSemana = (formato = 'normal') => {
+  return formato === 'normal'
+    ? ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+    : ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+};
+
+export const getDiaActual = () => {
+  const ahora = new Date();
+  const diaSemana = ahora.getDay();
+  const diasSemana = getDiasSemana();
+  return diasSemana[diaSemana];
+};
+
+export const getHoraActualEnMinutos = () => {
+  const ahora = new Date();
+  return ahora.getHours() * 60 + ahora.getMinutes();
+};
+
 // Función de debug para diagnosticar problemas
 export const debugHorarios = (horarios) => {
   const ahora = new Date();
-  const diaSemana = ahora.getDay();
-  const horaActual = ahora.getHours() * 60 + ahora.getMinutes();
-  
-  const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  const diaActual = diasSemana[diaSemana];
+  const diaActual = getDiaActual();
+  const horaActual = getHoraActualEnMinutos();
+  // Variable eliminada, ya no se usa
   
   console.log('=== DEBUG HORARIOS ===');
   console.log('Fecha actual:', ahora);
-  console.log('Día de la semana (0-6):', diaSemana);
   console.log('Día actual:', diaActual);
   console.log('Hora actual (minutos):', horaActual);
   console.log('Horarios recibidos:', horarios);
@@ -19,7 +35,6 @@ export const debugHorarios = (horarios) => {
   if (horarios) {
     const horarioDia = horarios[diaActual];
     console.log('Horario del día actual:', horarioDia);
-    
     if (horarioDia && horarioDia.abierto) {
       const horaApertura = parseHoraAMinutos(horarioDia.apertura);
       const horaCierre = parseHoraAMinutos(horarioDia.cierre);
@@ -37,46 +52,34 @@ export const debugHorarios = (horarios) => {
 
 export const isFarmaciaAbierta = (horarios) => {
   if (!horarios) return false;
-  
-  const ahora = new Date();
-  const diaSemana = ahora.getDay(); // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
-  const horaActual = ahora.getHours() * 60 + ahora.getMinutes(); // Minutos desde medianoche
-  
-  const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  const diaActual = diasSemana[diaSemana];
-  
+  const diaActual = getDiaActual();
+  const horaActual = getHoraActualEnMinutos();
   const horarioDia = horarios[diaActual];
   if (!horarioDia || !horarioDia.abierto) {
     return false;
   }
-  
   const horaApertura = parseHoraAMinutos(horarioDia.apertura);
   const horaCierre = parseHoraAMinutos(horarioDia.cierre);
-  
   return horaActual >= horaApertura && horaActual <= horaCierre;
 };
 
 export const getEstadoFarmacia = (horarios) => {
   if (!horarios) return { abierta: false, mensaje: 'Horarios no configurados' };
-  
+  const diasSemana = getDiasSemana();
   const ahora = new Date();
   const diaSemana = ahora.getDay();
-  const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   const diaActual = diasSemana[diaSemana];
-  
   const horarioDia = horarios[diaActual];
   if (!horarioDia || !horarioDia.abierto) {
-    return { 
-      abierta: false, 
+    return {
+      abierta: false,
       mensaje: `Cerrado (${diaActual})`,
       proximaApertura: getProximaApertura(horarios, diaSemana, diasSemana)
     };
   }
-  
-  const horaActual = ahora.getHours() * 60 + ahora.getMinutes();
+  const horaActual = getHoraActualEnMinutos();
   const horaApertura = parseHoraAMinutos(horarioDia.apertura);
   const horaCierre = parseHoraAMinutos(horarioDia.cierre);
-  
   if (horaActual < horaApertura) {
     return {
       abierta: false,
