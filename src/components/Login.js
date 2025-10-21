@@ -35,9 +35,9 @@ export default function Login({ botonMargin = 10, botonRegistro }) {
 
       if (snapshot.exists()) {
         const { role } = snapshot.val();
-        if (role === "Distribuidor") navigate("/distribuidor");
-        else if (role === "Farmacia") navigate("/farmacia");
-        else navigate("/home");
+  if (role === "Distribuidor") navigate("/distribuidor");
+  else if (role === "Farmacia") navigate("/farmacia");
+  else navigate("/usuario");
       } else {
         setError("No se encontraron datos de usuario.");
       }

@@ -114,7 +114,7 @@ const Register = () => {
   }, []);
 
   return (
-    <div style={{ minHeight: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(120deg, #f2e9e4 0%, #e0ecfc 100%)' }}>
+  <div style={{ minHeight: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(120deg, #f2e9e4 0%, #e0ecfc 100%)' }}>
       {step === 1 && (
         <div
           style={{
@@ -254,22 +254,54 @@ const Register = () => {
         </div>
       )}
       {step === 2 && (
-        <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '300px', gap: '10px', background: '#fff', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required style={{ width: '100%' }} />
-          <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} required style={{ width: '100%' }} />
-          {role === 'Usuario' && (
-            <>
-              <input type="text" placeholder="DNI" value={dni} onChange={e => setDni(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Obra Social" value={obraSocial} onChange={e => setObraSocial(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Nro. Afiliado" value={nroAfiliado} onChange={e => setNroAfiliado(e.target.value)} required style={{ width: '100%' }} />
-              <input type="date" placeholder="Vencimiento" value={vencimiento} onChange={e => setVencimiento(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Cobertura" value={cobertura} onChange={e => setCobertura(e.target.value)} required style={{ width: '100%' }} />
-                <input type="text" placeholder="Dirección completa" value={direccion} onChange={e => setDireccion(e.target.value)} required style={{ width: '100%' }} />
+        <div
+          style={{
+            opacity: show ? 1 : 0,
+            transform: show ? "scale(1)" : "scale(0.97)",
+            transition: "all 0.5s cubic-bezier(.4,2,.3,1)",
+            background: "rgba(255,255,255,0.98)",
+            borderRadius: 28,
+            boxShadow: "0 2px 12px #22223b11",
+            padding: "12px 24px 24px 24px",
+            width: "100%",
+            maxWidth: 350,
+            minWidth: 280,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
+          <h2
+            style={{
+              textAlign: "center",
+              marginTop: 0,
+              marginBottom: 12,
+              color: "#22223b",
+              fontWeight: 900,
+              fontSize: 32,
+              letterSpacing: 1.2,
+              textShadow: "0 2px 8px #4ea8de22",
+              fontFamily: "Nunito Sans, Inter, Poppins, Arial, sans-serif",
+            }}
+          >
+            Registro
+          </h2>
+          <form onSubmit={handleRegister} style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}>
+            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+            <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+            {role === 'Usuario' && (
+              <>
+                <input type="text" placeholder="DNI" value={dni} onChange={e => setDni(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="text" placeholder="Nombre" value={nombre} onChange={e => setNombre(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="text" placeholder="Apellido" value={apellido} onChange={e => setApellido(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="text" placeholder="Obra Social" value={obraSocial} onChange={e => setObraSocial(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="text" placeholder="Nro. Afiliado" value={nroAfiliado} onChange={e => setNroAfiliado(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="date" placeholder="Vencimiento" value={vencimiento} onChange={e => setVencimiento(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="text" placeholder="Cobertura" value={cobertura} onChange={e => setCobertura(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="text" placeholder="Dirección completa" value={direccion} onChange={e => setDireccion(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
                 <button
                   type="button"
-                  style={{ marginBottom: "10px", width: "100%", padding: "8px" }}
+                  style={{ marginBottom: "10px", width: "100%", padding: "8px", borderRadius: 18, fontWeight: 700, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', background: "linear-gradient(90deg, #4361ee 0%, #4ea8de 100%)", color: "#fff", border: "none", boxShadow: "0 2px 8px #22223b22" }}
                   onClick={async () => {
                     setCoordStatus(null);
                     if (!direccion) return;
@@ -306,98 +338,99 @@ const Register = () => {
                     <span>No se encontró la dirección.</span>
                   )}
                 </div>
-            </>
-          )}
-          {role === 'Farmacia' && (
-            <>
-              <input type="text" placeholder="Nombre de la farmacia" value={nombreFarmacia} onChange={e => setNombreFarmacia(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Dirección completa" value={direccionFarmacia} onChange={e => setDireccionFarmacia(e.target.value)} required style={{ width: '100%' }} />
-              <button
-                type="button"
-                style={{ marginBottom: "10px", width: "100%", padding: "8px" }}
-                onClick={async () => {
-                  setCoordStatusFarmacia(null);
-                  if (!direccionFarmacia) return;
-                  try {
-                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccionFarmacia)}`);
-                    const data = await response.json();
-                    if (data && data.length > 0) {
-                      setLatFarmacia(data[0].lat);
-                      setLngFarmacia(data[0].lon);
-                      setCoordStatusFarmacia('ok');
-                    } else {
+              </>
+            )}
+            {role === 'Farmacia' && (
+              <>
+                <input type="text" placeholder="Nombre de la farmacia" value={nombreFarmacia} onChange={e => setNombreFarmacia(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="text" placeholder="Dirección completa" value={direccionFarmacia} onChange={e => setDireccionFarmacia(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <button
+                  type="button"
+                  style={{ marginBottom: "10px", width: "100%", padding: "8px", borderRadius: 18, fontWeight: 700, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', background: "linear-gradient(90deg, #4361ee 0%, #4ea8de 100%)", color: "#fff", border: "none", boxShadow: "0 2px 8px #22223b22" }}
+                  onClick={async () => {
+                    setCoordStatusFarmacia(null);
+                    if (!direccionFarmacia) return;
+                    try {
+                      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccionFarmacia)}`);
+                      const data = await response.json();
+                      if (data && data.length > 0) {
+                        setLatFarmacia(data[0].lat);
+                        setLngFarmacia(data[0].lon);
+                        setCoordStatusFarmacia('ok');
+                      } else {
+                        setLatFarmacia("");
+                        setLngFarmacia("");
+                        setCoordStatusFarmacia('fail');
+                      }
+                    } catch {
                       setLatFarmacia("");
                       setLngFarmacia("");
                       setCoordStatusFarmacia('fail');
                     }
-                  } catch {
-                    setLatFarmacia("");
-                    setLngFarmacia("");
-                    setCoordStatusFarmacia('fail');
-                  }
-                }}
-              >Obtener latitud y longitud</button>
-              <div style={{ marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
-                {coordStatusFarmacia === 'ok' && (
-                  <span style={{ color: 'green', fontSize: '1.5em' }}>✔️</span>
-                )}
-                {coordStatusFarmacia === 'fail' && (
-                  <span style={{ color: 'red', fontSize: '1.5em' }}>❌</span>
-                )}
-                {latFarmacia && lngFarmacia && coordStatusFarmacia === 'ok' && (
-                  <span><strong>Latitud:</strong> {latFarmacia} <strong>Longitud:</strong> {lngFarmacia}</span>
-                )}
-                {coordStatusFarmacia === 'fail' && (
-                  <span>No se encontró la dirección.</span>
-                )}
-              </div>
-              <input type="text" placeholder="Contacto" value={contactoFarmacia} onChange={e => setContactoFarmacia(e.target.value)} required style={{ width: '100%' }} />
-              <div style={{ width: '100%' }}>
-                <label>Obras sociales aceptadas:</label>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                  <input
-                    type="text"
-                    placeholder="Agregar obra social"
-                    value={obraSocialInput}
-                    onChange={e => setObraSocialInput(e.target.value)}
-                    style={{ flex: 1 }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (obraSocialInput.trim() && !obrasSocialesAceptadas.includes(obraSocialInput.trim())) {
-                        setObrasSocialesAceptadas([...obrasSocialesAceptadas, obraSocialInput.trim()]);
-                        setObraSocialInput('');
-                      }
-                    }}
-                    style={{ padding: '8px' }}
-                  >Agregar</button>
+                  }}
+                >Obtener latitud y longitud</button>
+                <div style={{ marginBottom: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  {coordStatusFarmacia === 'ok' && (
+                    <span style={{ color: 'green', fontSize: '1.5em' }}>✔️</span>
+                  )}
+                  {coordStatusFarmacia === 'fail' && (
+                    <span style={{ color: 'red', fontSize: '1.5em' }}>❌</span>
+                  )}
+                  {latFarmacia && lngFarmacia && coordStatusFarmacia === 'ok' && (
+                    <span><strong>Latitud:</strong> {latFarmacia} <strong>Longitud:</strong> {lngFarmacia}</span>
+                  )}
+                  {coordStatusFarmacia === 'fail' && (
+                    <span>No se encontró la dirección.</span>
+                  )}
                 </div>
-                <ul style={{ paddingLeft: '20px', marginBottom: '8px' }}>
-                  {obrasSocialesAceptadas.map((obra, idx) => (
-                    <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {obra}
-                      <button type="button" style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => {
-                        setObrasSocialesAceptadas(obrasSocialesAceptadas.filter((_, i) => i !== idx));
-                      }}>✖</button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <HorariosFarmacia horarios={horarios} setHorarios={setHorarios} />
-            </>
-          )}
-          {role === 'Distribuidor' && (
-            <>
-              <input type="text" placeholder="DNI" value={dniDelivery} onChange={e => setDniDelivery(e.target.value)} required style={{ width: '100%' }} />
-              <input type="text" placeholder="Datos de contacto" value={contactoDelivery} onChange={e => setContactoDelivery(e.target.value)} required style={{ width: '100%' }} />
-            </>
-          )}
-          <button type="submit" style={{ width: '100%' }}>Registrar</button>
-          {error && <p style={{color:'red', textAlign:'center'}}>{error}</p>}
-          {success && <p style={{color:'green', textAlign:'center'}}>{success}</p>}
-        </form>
-      )}
+                <input type="text" placeholder="Contacto" value={contactoFarmacia} onChange={e => setContactoFarmacia(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <div style={{ width: '100%' }}>
+                  <label style={{ fontWeight: 700, color: '#22223b', fontSize: 16, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', marginBottom: 5 }}>Obras sociales aceptadas:</label>
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Agregar obra social"
+                      value={obraSocialInput}
+                      onChange={e => setObraSocialInput(e.target.value)}
+                      style={{ flex: 1, borderRadius: 14, fontSize: 16, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '8px 12px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (obraSocialInput.trim() && !obrasSocialesAceptadas.includes(obraSocialInput.trim())) {
+                          setObrasSocialesAceptadas([...obrasSocialesAceptadas, obraSocialInput.trim()]);
+                          setObraSocialInput('');
+                        }
+                      }}
+                      style={{ padding: '8px', borderRadius: 14, fontWeight: 700, fontSize: 15, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', background: "linear-gradient(90deg, #4361ee 0%, #4ea8de 100%)", color: "#fff", border: "none", boxShadow: "0 2px 8px #22223b22" }}
+                    >Agregar</button>
+                  </div>
+                  <ul style={{ paddingLeft: '20px', marginBottom: '8px' }}>
+                    {obrasSocialesAceptadas.map((obra, idx) => (
+                      <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', fontSize: 15 }}>
+                        {obra}
+                        <button type="button" style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer', fontSize: 18 }} onClick={() => {
+                          setObrasSocialesAceptadas(obrasSocialesAceptadas.filter((_, i) => i !== idx));
+                        }}>✖</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <HorariosFarmacia horarios={horarios} setHorarios={setHorarios} />
+              </>
+            )}
+            {role === 'Distribuidor' && (
+              <>
+                <input type="text" placeholder="DNI" value={dniDelivery} onChange={e => setDniDelivery(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+                <input type="text" placeholder="Datos de contacto" value={contactoDelivery} onChange={e => setContactoDelivery(e.target.value)} required style={{ width: '100%', borderRadius: 18, fontSize: 17, fontFamily: 'Nunito Sans, Inter, Poppins, Arial, sans-serif', border: '1.5px solid #b5b5c3', padding: '12px 14px', marginBottom: 8 }} />
+              </>
+            )}
+            <button type="submit" style={{ width: "100%", maxWidth: 400, borderRadius: 18, fontWeight: 800, fontSize: 19, padding: "15px 0", cursor: "pointer", letterSpacing: 1, fontFamily: "Nunito Sans, Inter, Poppins, Arial, sans-serif", boxShadow: "0 2px 16px #22223b22", border: "none", background: "linear-gradient(90deg, #4361ee 0%, #4ea8de 100%)", color: "#fff", marginTop: 10 }}>Registrar</button>
+            {error && <p style={{color:'#e63946', textAlign:'center', marginTop: 20, fontWeight: 700, background: "rgba(255,255,255,0.97)", borderRadius: 14, padding: "12px 0", boxShadow: "0 1px 8px #e6394622", fontFamily: "Nunito Sans, Inter, Poppins, Arial, sans-serif", border: `1.5px solid #e6394622`, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, animation: "shake 0.3s" }}><span style={{fontWeight:900, fontSize:18, marginRight:6}}>!</span> {error}</p>}
+            {success && <p style={{color:'green', textAlign:'center', marginTop: 20, fontWeight: 700, background: "rgba(255,255,255,0.97)", borderRadius: 14, padding: "12px 0", boxShadow: "0 1px 8px #4ea8de22", fontFamily: "Nunito Sans, Inter, Poppins, Arial, sans-serif", border: `1.5px solid #4ea8de22`, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><span style={{fontWeight:900, fontSize:18, marginRight:6}}>✔</span> {success}</p>}
+          </form>
+        </div>
+  )}
     </div>
   );
 };
