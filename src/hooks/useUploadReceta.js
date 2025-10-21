@@ -1,5 +1,10 @@
 import { useState } from 'react';
-
+/*
+Hooks: Son funciones especiales de React (por ejemplo,useState, useEffect,
+o personalizados como useUploadReceta) que permiten usar estado y otras
+características de React en componentes funcionales. Los hooks siempre
+empiezan con "use" y siguen reglas específicas de React.
+*/
 /**
  * Hook para manejar la lógica de subida de recetas médicas.
  * Permite seleccionar imagen, mostrar preview, manejar estados y enviar receta.

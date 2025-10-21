@@ -9,12 +9,7 @@ import Usuario from "./components/Usuario";
 function HomeLogin() {
   const navigate = useNavigate();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      <h1 style={{ textAlign: 'center', marginBottom: 30 }}>Bienvenido a G2 INNOVATION</h1>
-      <div style={{ width: '100%', maxWidth: '350px' }}>
-        <Login botonMargin={6} botonRegistro={() => navigate("/register")}/>
-      </div>
-    </div>
+    <Login botonMargin={6} botonRegistro={() => navigate("/register")} />
   );
 }
 

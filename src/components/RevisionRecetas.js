@@ -9,8 +9,10 @@ import { ref, onValue, update, push, remove } from 'firebase/database';
 import { db, auth } from '../firebase';
 import { actualizarCompraAEnviandoPorProducto } from '../utils/firebaseUtils';
 
+
 const RevisionRecetas = () => {
   const [recetas, setRecetas] = useState([]);
+  const [usuarios, setUsuarios] = useState({});
   const [mensaje, setMensaje] = useState('');
   const [comentarioRechazo, setComentarioRechazo] = useState('');
 
@@ -19,18 +21,30 @@ const RevisionRecetas = () => {
     if (!user) return;
     // Escucha recetas pendientes para esta farmacia
     const recetasRef = ref(db, 'recetas');
-    const unsubscribe = onValue(recetasRef, (snapshot) => {
+    const usuariosRef = ref(db, 'users');
+    const unsubRecetas = onValue(recetasRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const lista = Object.entries(data)
           .map(([id, receta]) => ({ id, ...receta }))
-          .filter(receta => receta.farmaciaId === user.uid && receta.estado === 'pendiente'); // Solo recetas pagadas
+          .filter(receta => receta.farmaciaId === user.uid && receta.estado === 'pendiente');
         setRecetas(lista);
       } else {
         setRecetas([]);
       }
     });
-    return () => unsubscribe();
+    const unsubUsuarios = onValue(usuariosRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setUsuarios(data);
+      } else {
+        setUsuarios({});
+      }
+    });
+    return () => {
+      unsubRecetas();
+      unsubUsuarios();
+    };
   }, []);
 
   // Aprueba la receta y notifica al usuario
@@ -43,18 +57,46 @@ const RevisionRecetas = () => {
         fechaRevision: new Date().toISOString(),
         revisadoPor: user.uid
       });
-      await update(ref(db, `productos/${productoId}`), {
-        estado: 'por_comprar',
-        recetaAprobada: true
-      });
-      // Actualiza la compra asociada a 'enviando'
-      if (user && productoId) {
-        await actualizarCompraAEnviandoPorProducto(productoId, user.uid);
-      }
-      // Notifica al usuario
+      // Obtener datos de la receta para usuarioId
       const recetaSnapshot = await new Promise(resolve => {
         onValue(ref(db, `recetas/${recetaId}`), snapshot => resolve(snapshot.val()), { onlyOnce: true });
       });
+      // Restar stock del producto
+      const productoRef = ref(db, `productos/${productoId}`);
+      const productoSnap = await new Promise(resolve => {
+        onValue(productoRef, snapshot => resolve(snapshot.val()), { onlyOnce: true });
+      });
+      if (productoSnap && productoSnap.stock > 0) {
+        await update(productoRef, { stock: productoSnap.stock - 1 });
+      }
+      // Actualiza la compra asociada a 'enviando' o crea una nueva si no existe
+      if (recetaSnapshot && recetaSnapshot.usuarioId && productoId) {
+        const comprasRef = ref(db, `compras/${recetaSnapshot.usuarioId}`);
+        onValue(comprasRef, async (snapshot) => {
+          const compras = snapshot.val();
+          let compraExistente = false;
+          if (compras) {
+            Object.entries(compras).forEach(([compraId, compra]) => {
+              if (compra.productoId === productoId && compra.estado === 'por_comprar') {
+                update(ref(db, `compras/${recetaSnapshot.usuarioId}/${compraId}`), { estado: 'enviando' });
+                compraExistente = true;
+              }
+            });
+          }
+          // Si no existe compra, crearla solo si hay stock
+          if (!compraExistente && productoSnap && productoSnap.stock > 0) {
+            await push(ref(db, `compras/${recetaSnapshot.usuarioId}`), {
+              productoId: productoId,
+              productoNombre: recetaSnapshot.productoNombre,
+              farmaciaId: recetaSnapshot.farmaciaId,
+              usuarioId: recetaSnapshot.usuarioId,
+              estado: 'enviando',
+              fecha: new Date().toISOString()
+            });
+          }
+        }, { onlyOnce: true });
+      }
+      // Notifica al usuario
       if (recetaSnapshot) {
         await push(ref(db, `notificaciones/${recetaSnapshot.usuarioId}`), {
           tipo: 'receta_aceptada',
@@ -85,7 +127,25 @@ const RevisionRecetas = () => {
         revisadoPor: user.uid,
         comentarioRechazo
       });
-      await push(ref(db, `notificaciones/${recetaId}`), {
+      // Obtener datos de la receta para usuarioId
+      const recetaSnapshot = await new Promise(resolve => {
+        onValue(ref(db, `recetas/${recetaId}`), snapshot => resolve(snapshot.val()), { onlyOnce: true });
+      });
+      // Actualiza la compra asociada a 'rechazada' usando el usuarioId del paciente
+      if (recetaSnapshot && recetaSnapshot.usuarioId && productoId) {
+        const comprasRef = ref(db, `compras/${recetaSnapshot.usuarioId}`);
+        onValue(comprasRef, (snapshot) => {
+          const compras = snapshot.val();
+          if (compras) {
+            Object.entries(compras).forEach(([compraId, compra]) => {
+              if (compra.productoId === productoId && compra.estado === 'por_comprar') {
+                update(ref(db, `compras/${recetaSnapshot.usuarioId}/${compraId}`), { estado: 'rechazada' });
+              }
+            });
+          }
+        }, { onlyOnce: true });
+      }
+      await push(ref(db, `notificaciones/${recetaSnapshot.usuarioId}`), {
         tipo: 'receta_rechazada',
         mensaje: `Tu receta médica para el producto ha sido rechazada. Motivo: ${comentarioRechazo}`,
         fecha: new Date().toISOString(),
@@ -127,25 +187,29 @@ const RevisionRecetas = () => {
             </tr>
           </thead>
           <tbody>
-            {recetas.map(receta => (
-              <tr key={receta.id}>
-                <td>{receta.productoNombre}</td>
-                <td>{receta.usuarioId}</td>
-                <td>{receta.fechaSubida ? new Date(receta.fechaSubida).toLocaleString() : 'Sin fecha'}</td>
-                <td>
-                  <button onClick={() => aprobarReceta(receta.id, receta.productoId)} style={{ marginRight: 8 }}>Aprobar</button>
-                  <button onClick={() => eliminarReceta(receta.id)} style={{ marginRight: 8 }}>Eliminar</button>
-                  <input
-                    type="text"
-                    placeholder="Motivo rechazo"
-                    value={comentarioRechazo}
-                    onChange={e => setComentarioRechazo(e.target.value)}
-                    style={{ marginRight: 8 }}
-                  />
-                  <button onClick={() => rechazarReceta(receta.id, receta.productoId)} style={{ background: '#dc3545', color: '#fff' }}>Rechazar</button>
-                </td>
-              </tr>
-            ))}
+            {recetas.map(receta => {
+              const usuario = usuarios[receta.usuarioId];
+              const nombreUsuario = usuario ? (usuario.nombre || usuario.displayName || usuario.email || receta.usuarioId) : receta.usuarioId;
+              return (
+                <tr key={receta.id}>
+                  <td>{receta.productoNombre}</td>
+                  <td>{nombreUsuario}</td>
+                  <td>{receta.fechaSubida ? new Date(receta.fechaSubida).toLocaleString() : 'Sin fecha'}</td>
+                  <td>
+                    <button onClick={() => aprobarReceta(receta.id, receta.productoId)} style={{ marginRight: 8 }}>Aprobar</button>
+                    <button onClick={() => eliminarReceta(receta.id)} style={{ marginRight: 8 }}>Eliminar</button>
+                    <input
+                      type="text"
+                      placeholder="Motivo rechazo"
+                      value={comentarioRechazo}
+                      onChange={e => setComentarioRechazo(e.target.value)}
+                      style={{ marginRight: 8 }}
+                    />
+                    <button onClick={() => rechazarReceta(receta.id, receta.productoId)} style={{ background: '#dc3545', color: '#fff' }}>Rechazar</button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

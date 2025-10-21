@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, get, update } from "firebase/database";
 import { db, auth } from "../firebase";
 import { updateCompraEstado, updateProductoEstado, eliminarCompraYProducto } from "../utils/firebaseUtils";
 
@@ -22,7 +22,7 @@ function DistribuidorProductos() {
   const [distanciasApi, setDistanciasApi] = useState({});
   const [timers, setTimers] = useState({});
 
-  // Timer para pedidos en estado "enviando"
+  // Timer solo para pedidos en estado 'enviando'
   useEffect(() => {
     if (!Array.isArray(productos)) return;
     const interval = setInterval(() => {
@@ -33,7 +33,7 @@ function DistribuidorProductos() {
             const pedidoTime = Date.parse(p.fecha);
             if (!isNaN(pedidoTime)) {
               const now = Date.now();
-              const diff = Math.max(0, 600 - Math.floor((now - pedidoTime) / 1000)); // 10 minutos para aceptar
+              const diff = Math.max(0, 600 - Math.floor((now - pedidoTime) / 1000));
               nuevos[p.id] = diff;
             } else {
               nuevos[p.id] = null;
@@ -51,9 +51,17 @@ function DistribuidorProductos() {
   // Cancelar pedidos expirados y reponer stock SOLO si sigue en estado 'enviando'
   useEffect(() => {
     productos.forEach(async (p) => {
-      if (p.fecha && timers[p.id] === 0 && p.estado === "enviando") {
-        await eliminarCompraYProducto(p.id);
-        window.alert("No se pudo realizar la compra ya que no hay deliverys disponibles. Intenta nuevamente.");
+      // Solo cancelar si el estado sigue siendo 'enviando' y el timer llegó a cero
+      if (p.fecha && timers[p.id] === 0) {
+        // Verifica el estado actual en la base de datos antes de eliminar
+        const compraRef = ref(db, `compras/${p.usuarioId}/${p.id}`);
+        const snap = await get(compraRef);
+        const compraActual = snap.val();
+        if (compraActual && compraActual.estado === "enviando") {
+          // Actualiza el estado a 'cancelado' antes de eliminar para el historial
+          await update(ref(db, `compras/${p.usuarioId}/${p.id}`), { estado: "cancelado" });
+          await eliminarCompraYProducto(p.id);
+        }
       }
     });
   }, [timers, productos]);
@@ -61,8 +69,14 @@ function DistribuidorProductos() {
   const handleAceptarPedido = async (id) => {
     setProcesando(id);
     try {
-      await updateProductoEstado(id, "aceptado");
-      await updateCompraEstado(id, "aceptado");
+      const user = auth.currentUser;
+      // Buscar el producto en la lista actual
+      const pedido = productos.find(p => p.id === id);
+      if (pedido) {
+        const { usuarioId } = pedido;
+        // Actualizar solo la compra específica
+        await update(ref(db, `compras/${usuarioId}/${id}`), { estado: "aceptado", deliveryId: user?.uid });
+      }
     } catch (err) {
       alert("Error al aceptar pedido: " + err.message);
     }
@@ -73,8 +87,15 @@ function DistribuidorProductos() {
   const handlePedidoEntregado = async (id) => {
     setProcesando(id);
     try {
-      await updateCompraEstado(id, "recibido");
-      await updateProductoEstado(id, "recibido");
+      const user = auth.currentUser;
+      const pedido = productos.find(p => p.id === id);
+      if (pedido) {
+        const { usuarioId } = pedido;
+        await update(ref(db, `compras/${usuarioId}/${id}`), {
+          estado: "recibido",
+          fechaEntrega: new Date().toISOString(),
+        });
+      }
     } catch (err) {
       alert("Error al actualizar estado: " + err.message);
     }
@@ -83,15 +104,40 @@ function DistribuidorProductos() {
 
   // Carga inicial de productos, farmacias, usuarios y dinero
   useEffect(() => {
+    // Consulta la tabla de productos para obtener los datos completos
     const productosRef = ref(db, "productos");
+    let productosData = {};
     const unsubscribeProductos = onValue(productosRef, (snapshot) => {
+      productosData = snapshot.val() || {};
+    });
+
+    // Ahora el delivery consulta la tabla de compras
+    const comprasRef = ref(db, "compras");
+    const unsubscribeCompras = onValue(comprasRef, (snapshot) => {
       const data = snapshot.val();
-      const productosEnviando = data
-        ? Object.entries(data)
-            .map(([id, p]) => ({ id, ...p }))
-            .filter((p) => p.estado === "enviando")
-        : [];
-      setProductos(productosEnviando);
+      let comprasFiltradas = [];
+      const user = auth.currentUser;
+      let pedidoAceptado = null;
+      if (data) {
+        Object.entries(data).forEach(([usuarioId, comprasUsuario]) => {
+          Object.entries(comprasUsuario).forEach(([compraId, compra]) => {
+            // Buscar datos completos del producto
+            const productoInfo = productosData[compra.productoId] || {};
+            // Combinar datos, asegurando que 'estado' de la compra tenga prioridad
+            const datosCombinados = { id: compraId, usuarioId, ...productoInfo, ...compra };
+            // Si el pedido está aceptado y lo aceptó el delivery actual, lo mostramos
+            if (compra.estado === "aceptado" && compra.deliveryId === user?.uid) {
+              pedidoAceptado = datosCombinados;
+            }
+            // Si el pedido está enviando y no hay pedido aceptado, lo mostramos
+            if (compra.estado === "enviando" && !pedidoAceptado) {
+              comprasFiltradas.push(datosCombinados);
+            }
+          });
+        });
+      }
+      // Si hay pedido aceptado, solo mostramos ese
+      setProductos(pedidoAceptado ? [pedidoAceptado] : comprasFiltradas);
     });
 
     const farmaciasRef = ref(db, "users");
@@ -122,7 +168,7 @@ function DistribuidorProductos() {
     }
 
     return () => {
-      unsubscribeProductos();
+      unsubscribeCompras();
       unsubscribeFarmacias();
       unsubscribeDinero();
     };
@@ -191,7 +237,7 @@ function DistribuidorProductos() {
         Dinero acumulado: ${dinero.toFixed(2)}
       </div>
       {productos.length === 0 ? (
-        <p>No hay productos en estado 'Enviando'.</p>
+        <p>No hay productos en estado 'Enviando' o 'Aceptado'.</p>
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -213,7 +259,7 @@ function DistribuidorProductos() {
                 <td>{farmacia ? farmacia.nombreFarmacia : prod.farmaciaId}</td>
                 <td>{distancia === null ? '-' : (distancia < 1000 ? Math.round(distancia) + ' m' : (distancia / 1000).toFixed(2) + ' km')}</td>
                 <td>
-                  {/* Estado ENVIANDO: mostrar timer y botón aceptar */}
+                  {/* Estado ENVIANDO: mostrar timer y botón aceptar solo si no hay pedido aceptado */}
                   {prod.estado === "enviando" && timers[prod.id] !== null && (
                     <span style={{ color: timers[prod.id] <= 60 ? "red" : "black", fontWeight: "bold" }}>
                       {timers[prod.id] > 0
@@ -221,12 +267,12 @@ function DistribuidorProductos() {
                         : "Pedido cancelado por tiempo"}
                     </span>
                   )}
-                  {prod.estado === "enviando" && timers[prod.id] > 0 && (
+                  {prod.estado === "enviando" && timers[prod.id] > 0 && productos.length === 1 && (
                     <button onClick={() => handleAceptarPedido(prod.id)} disabled={procesando === prod.id} style={{ marginLeft: "10px" }}>
                       {procesando === prod.id ? "Procesando..." : "Aceptar pedido"}
                     </button>
                   )}
-                  {/* Estado ACEPTADO: mostrar botón entregar */}
+                  {/* Estado ACEPTADO: mostrar botón entregar solo si el delivery actual lo aceptó */}
                   {prod.estado === "aceptado" && (
                     <button onClick={() => handlePedidoEntregado(prod.id)} disabled={procesando === prod.id} style={{ marginLeft: "10px", backgroundColor: "#4caf50", color: "white" }}>
                       {procesando === prod.id ? "Procesando..." : "Pedido entregado"}
@@ -236,9 +282,12 @@ function DistribuidorProductos() {
                   {prod.estado === "cancelado" && (
                     <span style={{ color: "red", fontWeight: "bold" }}>Pedido cancelado</span>
                   )}
-                  {/* Estado RECIBIDO: mensaje */}
+                  {/* Estado RECIBIDO: mensaje y hora de entrega */}
                   {prod.estado === "recibido" && (
-                    <span style={{ color: "green", fontWeight: "bold" }}>Pedido entregado</span>
+                    <span style={{ color: "green", fontWeight: "bold" }}>
+                      Pedido entregado<br />
+                      {prod.fechaEntrega ? `Entregado: ${new Date(prod.fechaEntrega).toLocaleString()}` : null}
+                    </span>
                   )}
                 </td>
               </tr>

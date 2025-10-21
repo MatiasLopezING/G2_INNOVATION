@@ -14,9 +14,9 @@ import { isFarmaciaAbierta, getEstadoFarmacia } from '../utils/horariosUtils';
 
 // Componente principal para mostrar y gestionar productos disponibles
 const ListaProductos = ({ mostrarCarrito = true }) => {
-  // Estado: compras pendientes por producto
-
   // Estado: lista de productos disponibles
+  // Estado: mensaje de compra exitosa
+  const [mensajeCompra, setMensajeCompra] = useState("");
   const [productos, setProductos] = useState([]);
   // Estado: filtro de búsqueda por nombre
   const [filtroNombre, setFiltroNombre] = useState("");
@@ -36,33 +36,18 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   const [productoParaReceta, setProductoParaReceta] = useState(null);
   // Estado: lista de farmacias disponibles
   const [farmacias, setFarmacias] = useState([]);
+  const [mensajes, setMensajes] = useState({}); // Para cada compra, el campo de texto se vincula a mensajes[compraId]
 
   useEffect(() => {
-    // 1. Consultar todas las compras en estado 'enviando' para cada producto
-    const comprasRef = ref(db, "compras");
-    onValue(comprasRef, (snapshot) => {
-      const data = snapshot.val();
-      const pendientes = {};
-      if (data) {
-        Object.values(data).forEach(usuarioCompras => {
-          Object.values(usuarioCompras).forEach(compra => {
-            if (compra.estado === "enviando") {
-              pendientes[compra.productoId] = (pendientes[compra.productoId] || 0) + (compra.cantidad || 1);
-            }
-          });
-        });
-      }
-
-    });
-    // 2. Obtener datos del usuario actual
+    // Obtener datos del usuario actual
     const user = auth.currentUser;
     if (user) {
       const userRef = ref(db, `users/${user.uid}`);
       onValue(userRef, (snapshot) => {
         setUsuario(snapshot.val());
-      }, { onlyOnce: true });
+      });
     }
-    // 3. Obtener productos
+    // Obtener productos
     const productosRef = ref(db, "productos");
     const unsubscribe = onValue(productosRef, (snapshot) => {
       const data = snapshot.val();
@@ -73,7 +58,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
         setProductos([]);
       }
     });
-    // 4. Obtener farmacias
+    // Obtener farmacias
     const farmaciasRef = ref(db, "users");
     const unsubscribeFarmacias = onValue(farmaciasRef, (snapshot) => {
       const data = snapshot.val();
@@ -112,16 +97,40 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
     } catch {
       setDistanciasApi(prev => ({ ...prev, [productoId]: null }));
     }
-  }, [openRouteApiKey, distanciasApi]);
+  }, [openRouteApiKey]);
 
   // Calcular distancia entre usuario y farmacia
   // Distancia real usando lat/lng (Haversine)
   // función distancia eliminada (no se usa)
 
+
+  // Función auxiliar para insertar productos en el carrito (con o sin receta)
+  const insertarEnCarrito = (producto, cantidad, recetaData = null) => {
+    const idx = carrito.findIndex(p => p.id === producto.id);
+    let nuevoCarrito = [...carrito];
+    if (idx >= 0) {
+      nuevoCarrito[idx].cantidad = (nuevoCarrito[idx].cantidad || 1) + cantidad;
+      if (recetaData) {
+        nuevoCarrito[idx].recetaSubida = true;
+        nuevoCarrito[idx].recetaURL = recetaData.imagenURL;
+        nuevoCarrito[idx].recetaId = recetaData.recetaId;
+      }
+    } else {
+      nuevoCarrito.push({
+        ...producto,
+        cantidad,
+        ...(recetaData ? {
+          recetaSubida: true,
+          recetaURL: recetaData.imagenURL,
+          recetaId: recetaData.recetaId
+        } : {})
+      });
+    }
+    setCarrito(nuevoCarrito);
+    setCantidades({ ...cantidades, [producto.id]: 1 });
+  };
+
   // Agregar producto al carrito con cantidad
-  /**
-   * Agrega un producto al carrito con la cantidad seleccionada
-   */
   const agregarProductoAlCarrito = useCallback((id) => {
     const producto = productos.find(p => p.id === id);
     if (!producto) return;
@@ -138,50 +147,20 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
       setMostrarUploadReceta(true);
       return;
     }
-    if (idx >= 0) {
-      const nuevoCarrito = [...carrito];
-      nuevoCarrito[idx].cantidad = cantidadEnCarrito + cantidad;
-      setCarrito(nuevoCarrito);
-    } else {
-      setCarrito([...carrito, { ...producto, cantidad }]);
-    }
-    setCantidades({ ...cantidades, [id]: 1 });
+    insertarEnCarrito(producto, cantidad);
   }, [productos, carrito, cantidades]);
 
   // Eliminar producto del carrito
-  /**
-   * Elimina un producto del carrito
-   */
   const removerProductoDelCarrito = (id) => {
     setCarrito(carrito.filter(p => p.id !== id));
   };
 
   // Manejar completar upload de receta
-  /**
-   * Handler cuando se completa la subida de receta
-   */
   const onRecetaSubida = useCallback((imagenURL, recetaId) => {
     setMostrarUploadReceta(false);
     if (productoParaReceta) {
       const cantidad = productoParaReceta.cantidad || 1;
-      const idx = carrito.findIndex(p => p.id === productoParaReceta.id);
-      if (idx >= 0) {
-        const nuevoCarrito = [...carrito];
-        nuevoCarrito[idx].cantidad = (nuevoCarrito[idx].cantidad || 1) + cantidad;
-        nuevoCarrito[idx].recetaSubida = true;
-        nuevoCarrito[idx].recetaURL = imagenURL;
-        nuevoCarrito[idx].recetaId = recetaId;
-        setCarrito(nuevoCarrito);
-      } else {
-        setCarrito([...carrito, {
-          ...productoParaReceta,
-          cantidad,
-          recetaSubida: true,
-          recetaURL: imagenURL,
-          recetaId: recetaId
-        }]);
-      }
-      setCantidades({ ...cantidades, [productoParaReceta.id]: 1 });
+      insertarEnCarrito(productoParaReceta, cantidad, { imagenURL, recetaId });
     }
     setProductoParaReceta(null);
   }, [productoParaReceta, carrito, cantidades]);
@@ -195,7 +174,15 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
     setProductoParaReceta(null);
   };
 
-  // Carrito: lógica de compra se gestiona en otro componente
+
+  // Función comprarTodoCarrito (dummy, debe implementarse según lógica de compra)
+  const comprarTodoCarrito = () => {
+    // Aquí iría la lógica para procesar la compra de todos los productos del carrito
+    // Por ahora solo muestra mensaje de éxito y limpia el carrito
+    setMensajeCompra("¡Compra realizada con éxito!");
+    setCarrito([]);
+    setTimeout(() => setMensajeCompra(""), 3000);
+  };
 
   /**
    * Formatea la distancia para mostrar en la tabla
@@ -237,116 +224,170 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
 
   // Render principal del componente
   return (
-    <div style={{ maxWidth: "600px", margin: "auto", padding: "20px" }}>
-      <h2>Productos disponibles</h2>
-      {/* Filtro de búsqueda por nombre */}
-      <input
-        type="text"
-        placeholder="Filtrar por nombre de medicamento"
-        value={filtroNombre}
-        onChange={e => setFiltroNombre(e.target.value)}
-        style={{ marginBottom: "15px", width: "100%", padding: "8px" }}
+  <div style={{ maxWidth: "600px", margin: "auto", padding: "20px" }}>
+    <h2>Productos disponibles</h2>
+    {/* Filtro de búsqueda por nombre */}
+    <input
+      type="text"
+      placeholder="Filtrar por nombre de medicamento"
+      value={filtroNombre}
+      onChange={e => setFiltroNombre(e.target.value)}
+      style={{ marginBottom: "15px", width: "100%", padding: "8px" }}
+    />
+    {/* Carrito de compras */}
+    {mostrarCarrito && (
+      <Carrito
+        carrito={carrito}
+        onRemove={removerProductoDelCarrito}
+        onComprar={async () => {
+          // Ejecuta la lógica real de compra del carrito
+          // handleComprar está definido dentro de Carrito.js, así que llamamos el método del componente
+          // Usamos un ref para acceder a la función interna
+          // Alternativamente, movemos la lógica aquí:
+          const userId = (window.firebaseAuth && window.firebaseAuth.currentUser && window.firebaseAuth.currentUser.uid) || (window.auth && window.auth.currentUser && window.auth.currentUser.uid);
+          for (const prod of carrito) {
+            if (prod.recetaSubida && prod.recetaId) {
+              // Actualiza receta si corresponde
+              const { actualizarEstadoReceta, ESTADOS_RECETA } = await import("../utils/firebaseUtils");
+              await actualizarEstadoReceta(prod.recetaId, ESTADOS_RECETA.PENDIENTE);
+            }
+            if (userId && prod.id) {
+              const { db } = await import("../firebase");
+              const { ref, push, update } = await import("firebase/database");
+              const compra = {
+                productoId: prod.id,
+                productoNombre: prod.nombre,
+                farmaciaId: prod.farmaciaId,
+                cantidad: prod.cantidad || 1,
+                precio: prod.precio,
+                estado: 'por_comprar',
+                fecha: new Date().toISOString(),
+                requiereReceta: !!prod.requiereReceta,
+                recetaId: prod.recetaId || null,
+                recetaURL: prod.recetaURL || null
+              };
+              await push(ref(db, `compras/${userId}`), compra);
+              // Actualiza el stock en productos
+              const nuevoStock = Math.max(0, (prod.stock || 0) - (prod.cantidad || 1));
+              await update(ref(db, `productos/${prod.id}`), { stock: nuevoStock });
+            }
+          }
+          setMensajeCompra("¡Compra realizada con éxito!");
+          setCarrito([]);
+          setTimeout(() => setMensajeCompra("") , 3000);
+        }}
       />
-      {/* Carrito de compras */}
-      {mostrarCarrito && (
-        <Carrito carrito={carrito} onRemove={removerProductoDelCarrito} />
-      )}
-      {/* Tabla de productos filtrados */}
-      {productosFiltradosConDistancia.length === 0 ? (
-        <p>No hay productos cargados.</p>
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>Precio</th>
-              <th>Stock</th>
-              <th>Farmacia</th>
-              <th>Estado Farmacia</th>
-              <th>Receta</th>
-              <th>Distancia</th>
-              <th>Estado</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {productosFiltradosConDistancia.map((prod) => {
-              const estadoFarmacia = getEstadoFarmacia(prod.farmacia?.horarios);
-              return (
-                <tr key={prod.id}>
-                  <td>{prod.nombre}</td>
-                  <td>${prod.precio}</td>
-                  <td>{prod.stock}</td>
-                  <td>{prod.farmacia ? prod.farmacia.nombreFarmacia : prod.farmaciaId}</td>
-                  <td>
+    )}
+    {/* Mensaje de compra */}
+    {mensajeCompra && (
+      <div style={{ background: '#d4edda', color: '#155724', padding: '10px', borderRadius: '5px', marginBottom: '10px', textAlign: 'center', fontWeight: 'bold' }}>
+        {mensajeCompra}
+      </div>
+    )}
+    {/* Tabla de productos filtrados */}
+    {productosFiltradosConDistancia.length === 0 ? (
+      <p>No hay productos cargados.</p>
+    ) : (
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Precio</th>
+            <th>Stock</th>
+            <th>Farmacia</th>
+            <th>Estado Farmacia</th>
+            <th>Receta</th>
+            <th>Distancia</th>
+            <th>Estado</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {productosFiltradosConDistancia.map((prod) => {
+            const estadoFarmacia = getEstadoFarmacia(prod.farmacia?.horarios);
+            return (
+              <tr key={prod.id}>
+                <td>{prod.nombre}</td>
+                <td>${prod.precio}</td>
+                <td>{prod.stock}</td>
+                <td>{prod.farmacia ? prod.farmacia.nombreFarmacia : prod.farmaciaId}</td>
+                <td>
+                  <span style={{
+                    color: estadoFarmacia.abierta ? '#28a745' : '#dc3545',
+                    fontWeight: 'bold',
+                    fontSize: '12px'
+                  }}>
+                    {estadoFarmacia.abierta ? '🟢 Abierta' : '🔴 Cerrada'}
+                  </span>
+                  {!estadoFarmacia.abierta && (
+                    <div style={{ fontSize: '10px', color: '#666' }}>
+                      {estadoFarmacia.mensaje}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  {prod.requiereReceta ? (
                     <span style={{
-                      color: estadoFarmacia.abierta ? '#28a745' : '#dc3545',
-                      fontWeight: 'bold',
-                      fontSize: '12px'
+                      backgroundColor: '#ffc107',
+                      color: '#856404',
+                      padding: '2px 6px',
+                      borderRadius: '3px',
+                      fontSize: '11px',
+                      fontWeight: 'bold'
                     }}>
-                      {estadoFarmacia.abierta ? '🟢 Abierta' : '🔴 Cerrada'}
+                      📋 Receta
                     </span>
-                    {!estadoFarmacia.abierta && (
-                      <div style={{ fontSize: '10px', color: '#666' }}>
-                        {estadoFarmacia.mensaje}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    {prod.requiereReceta ? (
-                      <span style={{
-                        backgroundColor: '#ffc107',
-                        color: '#856404',
-                        padding: '2px 6px',
-                        borderRadius: '3px',
-                        fontSize: '11px',
-                        fontWeight: 'bold'
-                      }}>
-                        📋 Receta
-                      </span>
-                    ) : (
-                      <span style={{ color: '#6c757d', fontSize: '12px' }}>-</span>
-                    )}
-                  </td>
-                  <td>{mostrarDistancia(prod.distancia)}</td>
-                  <td>{
-                    prod.estado === "por_comprar" ? "Por comprar" :
-                    prod.estado === "enviando" ? "Enviando" :
-                    prod.estado === "recibido" ? "Recibido" : prod.estado
-                  }</td>
-                  <td>
-                    {prod.estado === "por_comprar" ? (
-                      <>
-                        <input
-                          type="number"
-                          min={1}
-                          max={prod.stock}
-                          value={cantidades[prod.id] || 1}
-                          onChange={e => setCantidades({ ...cantidades, [prod.id]: e.target.value })}
-                          style={{ width: "60px", marginRight: "8px" }}
-                        />
-                        <button onClick={() => agregarProductoAlCarrito(prod.id)}>
-                          Agregar al carrito
-                        </button>
-                      </>
-                    ) : null}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-      {/* Modal para subir receta médica */}
-      {mostrarUploadReceta && productoParaReceta && (
-        <UploadRecetaSimple
-          producto={productoParaReceta}
-          farmaciaId={productoParaReceta.farmaciaId}
-          onUploadComplete={onRecetaSubida}
-          onCancel={cancelarSubidaReceta}
-        />
-      )}
-    </div>
+                  ) : (
+                    <span style={{ color: '#6c757d', fontSize: '12px' }}>-</span>
+                  )}
+                </td>
+                <td>{mostrarDistancia(prod.distancia)}</td>
+                <td>{
+                  prod.estado === "por_comprar" ? "Por comprar" :
+                  prod.estado === "enviando" ? "Enviando" :
+                  prod.estado === "recibido" ? "Recibido" : prod.estado
+                }</td>
+                <td>
+                  {prod.estado === "por_comprar" ? (
+                    <React.Fragment>
+                      <input
+                        type="number"
+                        min={1}
+                        max={prod.stock}
+                        value={cantidades[prod.id] || 1}
+                        onChange={e => setCantidades({ ...cantidades, [prod.id]: e.target.value })}
+                        style={{ width: "60px", marginRight: "8px" }}
+                      />
+                      <button
+                        onClick={() => agregarProductoAlCarrito(prod.id)}
+                        disabled={prod.stock < 1}
+                        style={{
+                          background: prod.stock < 1 ? "#ccc" : undefined,
+                          color: prod.stock < 1 ? "#888" : undefined,
+                          cursor: prod.stock < 1 ? "not-allowed" : undefined
+                        }}
+                      >
+                        Agregar al carrito
+                      </button>
+                    </React.Fragment>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    )}
+    {/* Modal para subir receta médica */}
+    {mostrarUploadReceta && productoParaReceta && (
+      <UploadRecetaSimple
+        producto={productoParaReceta}
+        farmaciaId={productoParaReceta.farmaciaId}
+        onUploadComplete={onRecetaSubida}
+        onCancel={cancelarSubidaReceta}
+      />
+    )}
+  </div>
   );
 };
 

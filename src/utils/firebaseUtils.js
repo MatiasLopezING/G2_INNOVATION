@@ -1,4 +1,10 @@
-import { ref, onValue, update, get } from "firebase/database";
+/*
+Utils: Son funciones utilitarias o de ayuda, que pueden ser usadas en cualquier
+parte del proyecto. No siguen las reglas de los hooks y no dependen de React.
+Por ejemplo, funciones para formatear fechas, calcular totales, etc
+*/
+
+import { ref, onValue, update, get, push, remove } from "firebase/database";
 import { db } from "../firebase";
 // Actualiza el estado de la compra a 'enviando' para un producto y usuario
 export async function actualizarCompraAEnviandoPorProducto(productoId, userId) {
@@ -74,9 +80,9 @@ export async function updateProductoEstado(productoId, estado, extra = {}) {
 export async function eliminarCompraYProducto(productoId) {
   await forEachCompra(
     compra => compra.productoId === productoId,
-    (uid, compraId) => update(ref(db, `compras/${uid}/${compraId}`), null)
+    (uid, compraId) => remove(ref(db, `compras/${uid}/${compraId}`))
   );
-  await update(ref(db, `productos/${productoId}`), null);
+  await remove(ref(db, `productos/${productoId}`));
 }
 
 // Repone el stock de un producto
@@ -86,3 +92,5 @@ export async function reponerStock(productoId, cantidad) {
   const nuevoStock = prod && prod.stock ? prod.stock + (cantidad || 1) : (cantidad || 1);
   await update(ref(db, `productos/${productoId}`), { stock: nuevoStock });
 }
+
+
