@@ -265,6 +265,7 @@ const Register = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <img src="/icons/RecetApp.png" alt="RecetApp" style={{ width: 72, height: 72, objectFit: 'contain', marginBottom: 10 }} />
       <h2 style={{ textAlign: 'center' }}>Registro</h2>
       {step === 1 && (
         <form onSubmit={handleNext} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '300px', gap: '10px', background: '#fff', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
