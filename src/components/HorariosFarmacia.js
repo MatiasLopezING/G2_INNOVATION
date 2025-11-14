@@ -46,7 +46,7 @@ const HorariosFarmacia = ({ horarios, setHorarios }) => {
       nuevosHorarios[dia].abierto &&
       nuevosHorarios[dia].apertura >= nuevosHorarios[dia].cierre
     ) {
-      alert('La hora de cierre debe ser mayor que la de apertura.');
+      alert('La hora de cierre debe ser después de la de apertura. Por favor corrige la hora.');
       return;
     }
     setHorarios(nuevosHorarios);

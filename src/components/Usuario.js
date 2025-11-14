@@ -7,6 +7,7 @@ import Notificaciones from './Notificaciones';
 import { ref, onValue } from "firebase/database";
 import { db, auth } from "../firebase";
 import { isFarmaciaAbierta } from '../utils/horariosUtils';
+import Header from './Header';
 
 const Usuario = () => {
   // Estado del usuario actual y farmacias abiertas
@@ -43,7 +44,7 @@ const Usuario = () => {
 
   return (
     <div style={{background:'#fff', minHeight:'100vh', padding:'20px'}}>
-      <h1>Usuario</h1>
+      <Header title="Usuario" />
       <MapaUsuario usuario={usuario} farmacias={farmacias} />
       <div style={{ marginBottom: '20px' }}>
         <button 

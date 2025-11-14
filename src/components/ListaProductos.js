@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useState, useCallback } from "react";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, push, update } from "firebase/database";
 import { db, auth } from "../firebase";
 import Carrito from "./Carrito";
 import UploadRecetaSimple from "./UploadRecetaSimple";
@@ -28,6 +28,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   const openRouteApiKey = process.env.REACT_APP_OPENROUTE_API_KEY;
   // Estado: productos en el carrito
   const [carrito, setCarrito] = useState([]);
+  const [notif, setNotif] = useState('');
   // Estado: cantidades seleccionadas por producto
   const [cantidades, setCantidades] = useState({});
   // Estado: mostrar modal de subida de receta
@@ -130,7 +131,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
     const idx = carrito.findIndex(p => p.id === id);
     const cantidadEnCarrito = idx >= 0 ? (carrito[idx].cantidad || 1) : 0;
     if (cantidad < 1 || (cantidad + cantidadEnCarrito) > stockDisponible) {
-      alert(`No puedes agregar ${cantidad} unidades. Stock disponible: ${stockDisponible - cantidadEnCarrito}`);
+      alert(`No hay suficiente stock. Solo quedan ${stockDisponible - cantidadEnCarrito} unidades disponibles.`);
       return;
     }
     if (producto.requiereReceta) {
@@ -146,6 +147,9 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
       setCarrito([...carrito, { ...producto, cantidad }]);
     }
     setCantidades({ ...cantidades, [id]: 1 });
+    // Notificación temporal de agregado (mostrar 5s más que antes)
+    setNotif('Producto agregado al carrito. Podés completar la compra desde tu carrito.');
+    setTimeout(() => setNotif(''), 7000);
   }, [productos, carrito, cantidades]);
 
   // Eliminar producto del carrito
@@ -192,6 +196,40 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   };
 
   // Carrito: lógica de compra se gestiona en otro componente
+  // Implementación local de compra por todos los items del carrito
+  const handleComprar = async () => {
+    const uid = auth.currentUser ? auth.currentUser.uid : null;
+    if (!uid) {
+      alert('Para comprar, primero tenés que iniciar sesión.');
+      return;
+    }
+    if (carrito.length === 0) return;
+    try {
+      // Por cada producto en el carrito, crear una entrada en compras/<uid>
+      for (const prod of carrito) {
+        const compraRef = ref(db, `compras/${uid}`);
+        await push(compraRef, {
+          productoId: prod.id,
+          nombre: prod.nombre,
+          cantidad: prod.cantidad || 1,
+          estado: 'enviando',
+          precio: prod.precio,
+          farmaciaId: prod.farmaciaId || prod.farmacia?.id || null,
+          fecha: Date.now()
+        });
+  // Actualizar stock del producto en la BD y marcar la fecha de compra para el timer del delivery
+  const nuevoStock = (typeof prod.stock === 'number' ? prod.stock : Number(prod.stock || 0)) - (prod.cantidad || 1);
+  await update(ref(db, `productos/${prod.id}`), { stock: nuevoStock < 0 ? 0 : nuevoStock, estado: 'enviando', fecha: Date.now() });
+      }
+      // Limpiar carrito y notificar (mostrar 5s más que antes)
+      setCarrito([]);
+      setNotif('Compra realizada. Podés revisar el estado en Mis compras.');
+      setTimeout(() => setNotif(''), 8000);
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo completar la compra. Intenta nuevamente en unos minutos.');
+    }
+  };
 
   /**
    * Formatea la distancia para mostrar en la tabla
@@ -207,7 +245,8 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
    * Filtra productos por nombre, asocia farmacia y calcula distancia
    */
   const productosFiltradosConDistancia = productos
-    .filter(prod => prod.nombre.toLowerCase().includes(filtroNombre.toLowerCase()))
+    // proteger contra nombres undefined -> evitar crash al llamar toLowerCase
+    .filter(prod => (prod && prod.nombre ? String(prod.nombre) : '').toLowerCase().includes(String(filtroNombre || '').toLowerCase()))
     .map(prod => {
       const farmacia = farmacias.find(f => f.id === prod.farmaciaId);
       if (farmacia && usuario && prod.id && distanciasApi[prod.id] === undefined) {
@@ -219,6 +258,8 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
         distancia: distanciasApi[prod.id] !== undefined ? distanciasApi[prod.id] : null
       };
     })
+    // ocultar productos sin stock
+    .filter(prod => Number(prod.stock) > 0)
     .filter(prod => {
       if (!prod.farmacia) return false;
       return isFarmaciaAbierta(prod.farmacia.horarios);
@@ -245,11 +286,22 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
       />
       {/* Carrito de compras */}
       {mostrarCarrito && (
-        <Carrito carrito={carrito} onRemove={removerProductoDelCarrito} />
+        <Carrito carrito={carrito} onRemove={removerProductoDelCarrito} onComprar={handleComprar} />
       )}
+      {notif && <div style={{ marginTop: '8px', padding: '8px', background: '#e9f7ef', color: '#155724', borderRadius: '6px' }}>{notif}</div>}
       {/* Tabla de productos filtrados */}
       {productosFiltradosConDistancia.length === 0 ? (
-        <p>No hay productos cargados.</p>
+        // Si el usuario está aplicando un filtro de búsqueda y no hay resultados,
+        // mostrar un mensaje amigable y una opción para limpiar el filtro.
+        filtroNombre && String(filtroNombre).trim() !== "" ? (
+          <div style={{ padding: '12px', background: '#fff3cd', color: '#856404', borderRadius: '6px' }}>
+            <p style={{ margin: 0, fontWeight: '600' }}>No se encontró ningún resultado para tu búsqueda.</p>
+            <p style={{ margin: '6px 0 0 0' }}>Probá con otra palabra, verificá la ortografía o sacá los filtros para ver todos los productos.</p>
+            <button onClick={() => setFiltroNombre('')} style={{ marginTop: '8px' }}>Mostrar todos los productos</button>
+          </div>
+        ) : (
+          <p>No hay productos cargados.</p>
+        )
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -311,7 +363,9 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
                     prod.estado === "recibido" ? "Recibido" : prod.estado
                   }</td>
                   <td>
-                    {prod.estado === "por_comprar" ? (
+                    {/* Permitir volver a comprar el mismo producto después de pagar: */}
+                    {/* mostramos el control de cantidad y botón siempre que haya stock disponible */}
+                    {Number(prod.stock) > 0 ? (
                       <>
                         <input
                           type="number"
@@ -325,7 +379,9 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
                           Agregar al carrito
                         </button>
                       </>
-                    ) : null}
+                    ) : (
+                      <span style={{ color: '#888' }}>Sin stock</span>
+                    )}
                   </td>
                 </tr>
               );

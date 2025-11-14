@@ -16,16 +16,21 @@ const UploadReceta = ({ producto, farmaciaId, onUploadComplete, onCancel }) => {
   const [imagen, setImagen] = useState(null);
   const [subiendo, setSubiendo] = useState(false);
   const [mensaje, setMensaje] = useState('');
+  const [showHelp, setShowHelp] = useState(false);
+  const acceptedFormatsText = 'Aceptamos fotos en JPG, JPEG, PNG, WEBP y HEIC.';
 
   // Maneja el cambio de archivo
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type.startsWith('image/')) {
+      const name = String(file.name || '').toLowerCase();
+      const isImageByType = file.type && file.type.startsWith('image/');
+      const isImageByExt = name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.webp') || name.endsWith('.heic') || name.endsWith('.heif');
+      if (isImageByType || isImageByExt) {
         setImagen(file);
         setMensaje('');
       } else {
-        setMensaje('Por favor selecciona una imagen válida');
+        setMensaje('Lo que estás cargando no parece una foto. Por favor subí una foto en formato JPG, PNG o WEBP.');
         setImagen(null);
       }
     }
@@ -67,10 +72,11 @@ const UploadReceta = ({ producto, farmaciaId, onUploadComplete, onCancel }) => {
           onUploadComplete(result.image.url);
         }, 1500);
       } else {
-        setMensaje('Error al subir la imagen. Por favor intenta de nuevo.');
+        setMensaje('No se pudo subir la imagen. Por favor intenta de nuevo.');
       }
     } catch (error) {
-      setMensaje('Error al subir la receta: ' + error.message);
+      console.error(error);
+      setMensaje('No se pudo subir la receta. Intenta nuevamente más tarde.');
     } finally {
       setSubiendo(false);
     }
@@ -81,7 +87,16 @@ const UploadReceta = ({ producto, farmaciaId, onUploadComplete, onCancel }) => {
       <div style={{ background: '#fff', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%' }}>
         <h3>Subir Receta Médica</h3>
         <form onSubmit={handleSubmit}>
-          <input type="file" accept="image/*" onChange={handleFileChange} disabled={subiendo} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <input type="file" accept="image/*" onChange={handleFileChange} disabled={subiendo} />
+            <button type="button" onClick={() => setShowHelp(s => !s)} style={{ padding: '4px 8px' }}>?</button>
+          </div>
+          {showHelp && (
+            <div style={{ background: '#f1f1f1', padding: '8px', borderRadius: 6, marginBottom: 8 }}>
+              <strong>¿Qué archivos aceptamos?</strong>
+              <div style={{ marginTop: 6 }}>{acceptedFormatsText} Si subís otro tipo de archivo (por ejemplo PDF o DOCX) no vas a poder continuar.</div>
+            </div>
+          )}
           <div style={{ margin: '10px 0' }}>
             <button type="submit" disabled={subiendo} style={{ marginRight: 8 }}>Enviar</button>
             <button type="button" onClick={onCancel} disabled={subiendo}>Cancelar</button>

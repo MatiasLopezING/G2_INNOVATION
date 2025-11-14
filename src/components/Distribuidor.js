@@ -1,5 +1,6 @@
 import React from 'react';
 import DistribuidorProductos from './DistribuidorProductos';
+import Header from './Header';
 
 /**
  * Componente principal para el rol de Distribuidor.
@@ -12,7 +13,7 @@ import DistribuidorProductos from './DistribuidorProductos';
 const Distribuidor = () => {
   return (
     <div style={{ background: '#fff', minHeight: '100vh', padding: '20px' }}>
-      <h1 style={{ marginBottom: '20px' }}>Distribuidor</h1>
+      <Header title="Distribuidor" />
       {/* Panel principal de productos y pedidos */}
       <DistribuidorProductos />
     </div>

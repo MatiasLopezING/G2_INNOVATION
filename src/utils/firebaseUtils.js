@@ -52,3 +52,23 @@ export async function reponerStock(productoId, cantidad) {
   const nuevoStock = prod && prod.stock ? prod.stock + (cantidad || 1) : (cantidad || 1);
   await update(ref(db, `productos/${productoId}`), { stock: nuevoStock });
 }
+
+// Verifica si un DNI ya está registrado en la base de datos de usuarios (Realtime DB)
+export async function isDniRegistered(dni) {
+  if (!dni) return false;
+  const snap = await get(ref(db, 'users'));
+  const data = snap.val();
+  if (!data) return false;
+  // Recorremos usuarios y buscamos coincidencias de dni exacto
+  return Object.values(data).some(user => user && (user.dni === dni || user.dni === Number(dni) || String(user.dni) === String(dni)));
+}
+
+// Verifica si un email ya está registrado en la base de datos de usuarios (Realtime DB)
+// Nota: para emails, Firebase Auth también rechazará correos duplicados al crear el usuario.
+export async function isEmailRegisteredInDb(email) {
+  if (!email) return false;
+  const snap = await get(ref(db, 'users'));
+  const data = snap.val();
+  if (!data) return false;
+  return Object.values(data).some(user => user && user.email && String(user.email).toLowerCase() === String(email).toLowerCase());
+}

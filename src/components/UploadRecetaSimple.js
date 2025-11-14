@@ -18,6 +18,9 @@ const UploadRecetaSimple = ({ producto, farmaciaId, onUploadComplete, onCancel }
   const [mensaje, setMensaje] = useState('');
   const [preview, setPreview] = useState(null);
   const [recetaPendiente, setRecetaPendiente] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const acceptedFormatsText = 'Aceptamos fotos en JPG, JPEG, PNG, WEBP y HEIC.';
+  const [justUploaded, setJustUploaded] = useState(false);
 
   // Verifica si ya existe una receta pendiente para este producto
   useEffect(() => {
@@ -27,11 +30,13 @@ const UploadRecetaSimple = ({ producto, farmaciaId, onUploadComplete, onCancel }
     const unsubscribe = onValue(recetasRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const recetasUsuario = Object.values(data).filter(receta => 
-          receta.usuarioId === user.uid && 
-          receta.productoId === producto.id && 
-          receta.estado === 'pendiente'
-        );
+        // Normalizar y comparar como strings para evitar falsos positivos
+        const lista = Object.entries(data).map(([id, receta]) => ({ id, ...receta }));
+        const recetasUsuario = lista.filter(receta => {
+          if (!receta) return false;
+          if (!receta.usuarioId || !receta.productoId) return false;
+          return String(receta.usuarioId) === String(user.uid) && String(receta.productoId) === String(producto.id) && receta.estado === 'pendiente';
+        });
         setRecetaPendiente(recetasUsuario.length > 0);
       } else {
         setRecetaPendiente(false);
@@ -44,7 +49,11 @@ const UploadRecetaSimple = ({ producto, farmaciaId, onUploadComplete, onCancel }
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      if (file.type.startsWith('image/')) {
+      // Aceptar si el navegador reconoce como image/* o por extensión conocida
+      const name = String(file.name || '').toLowerCase();
+      const isImageByType = file.type && file.type.startsWith('image/');
+      const isImageByExt = name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.webp') || name.endsWith('.heic') || name.endsWith('.heif');
+      if (isImageByType || isImageByExt) {
         setImagen(file);
         setMensaje('');
         // Preview
@@ -54,7 +63,8 @@ const UploadRecetaSimple = ({ producto, farmaciaId, onUploadComplete, onCancel }
         };
         reader.readAsDataURL(file);
       } else {
-        setMensaje('Por favor selecciona una imagen válida');
+        // Mensaje amigable para usuarios no técnicos
+        setMensaje('Lo que estás cargando no parece una foto. Por favor subí una foto en formato JPG, PNG o WEBP.');
         setImagen(null);
         setPreview(null);
       }
@@ -87,19 +97,25 @@ const UploadRecetaSimple = ({ producto, farmaciaId, onUploadComplete, onCancel }
             cantidad: producto.cantidad || 1
           };
           await push(ref(db, 'recetas'), recetaData);
+          // Evitar que el listener muestre el aviso justo después de nuestra propia subida
+          setJustUploaded(true);
           setMensaje('Receta enviada correctamente. La farmacia la revisará.');
           setTimeout(() => {
             onUploadComplete(base64Image);
+            // limpiar el flag poco después de cerrar el modal por si el componente sigue montado
+            setTimeout(() => setJustUploaded(false), 1000);
           }, 1500);
-        } catch (error) {
-          setMensaje('Error al subir la receta: ' + error.message);
+          } catch (error) {
+          console.error(error);
+          setMensaje('No se pudo enviar la receta. Intenta nuevamente.');
         } finally {
           setSubiendo(false);
         }
       };
       reader.readAsDataURL(imagen);
     } catch (error) {
-      setMensaje('Error al procesar la imagen: ' + error.message);
+      console.error(error);
+      setMensaje('No se pudo procesar la imagen. Intenta con otra foto o intenta más tarde.');
       setSubiendo(false);
     }
   };
@@ -107,10 +123,19 @@ const UploadRecetaSimple = ({ producto, farmaciaId, onUploadComplete, onCancel }
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
       <div style={{ background: '#fff', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', maxWidth: '400px', width: '100%' }}>
-        <h3>Subir Receta Médica</h3>
-        {recetaPendiente && <p style={{ color: 'orange' }}>Ya tienes una receta pendiente para este producto.</p>}
+  <h3>Subir Receta Médica</h3>
+  {recetaPendiente && !subiendo && !justUploaded && <p style={{ color: 'orange' }}>Ya tienes una receta pendiente para este producto.</p>}
         <form onSubmit={handleSubmit}>
-          <input type="file" accept="image/*" onChange={handleFileChange} disabled={subiendo || recetaPendiente} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <input type="file" accept="image/*" onChange={handleFileChange} disabled={subiendo || recetaPendiente} />
+            <button type="button" onClick={() => setShowHelp(s => !s)} style={{ padding: '4px 8px' }}>?</button>
+          </div>
+          {showHelp && (
+            <div style={{ background: '#f1f1f1', padding: '8px', borderRadius: 6, marginBottom: 8 }}>
+              <strong>¿Qué archivos aceptamos?</strong>
+              <div style={{ marginTop: 6 }}>{acceptedFormatsText} Si subís otro tipo de archivo (por ejemplo PDF o DOCX) no vas a poder continuar.</div>
+            </div>
+          )}
           {preview && <img src={preview} alt="Preview" style={{ width: '100%', margin: '10px 0', borderRadius: '8px' }} />}
           <div style={{ margin: '10px 0' }}>
             <button type="submit" disabled={subiendo || recetaPendiente} style={{ marginRight: 8 }}>Enviar</button>

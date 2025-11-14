@@ -36,3 +36,21 @@
     transform: rotate(360deg);
   }
 }
+
+/* Fade helper for cards and step transitions */
+.fade-in {
+  animation: g2-fade-in 320ms ease forwards;
+}
+.fade-out {
+  animation: g2-fade-out 260ms ease forwards;
+}
+@keyframes g2-fade-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.995); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes g2-fade-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-6px) scale(0.995); }
+}
+
+.form-step { transition: opacity 260ms ease, transform 260ms ease; }
