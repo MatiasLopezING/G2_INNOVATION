@@ -1,16 +1,17 @@
 /**
  * Componente para registro de usuarios, farmacias y deliverys.
- * No recibe props. Utiliza pasos y formularios según el rol seleccionado.
+ * Versión avanzada: validaciones por campo, ayudas de formato,
+ * geocodificación de direcciones y (para delivery) validación de imágenes.
+ * No usa ningún fondo de video.
  */
 
 import React, { useState } from 'react';
-import VideoBackground from './VideoBackground';
 import { createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from 'firebase/auth';
 import { ref, set, get, push } from 'firebase/database';
 import { auth, db } from '../firebase';
-import { isDniRegistered, isEmailRegisteredInDb } from '../utils/firebaseUtils';
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from 'react-router-dom';
 import HorariosFarmacia from './HorariosFarmacia';
+import { isDniRegistered, isEmailRegisteredInDb } from '../utils/firebaseUtils';
 
 const Register = () => {
   const [step, setStep] = useState(1);
@@ -18,9 +19,10 @@ const Register = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [errors, setErrors] = useState({}); // errors por campo
+  const [errors, setErrors] = useState({});
   const [success, setSuccess] = useState('');
   const [showFormat, setShowFormat] = useState(false);
+  const [isFading, setIsFading] = useState(false);
   const navigate = useNavigate();
 
   // Usuario
@@ -35,8 +37,7 @@ const Register = () => {
   const [direccion, setDireccion] = useState('');
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
-  const [coordStatus, setCoordStatus] = useState(null); // null, 'ok', 'fail'
-  // Tarjeta (simulación)
+  const [coordStatus, setCoordStatus] = useState(null); // null | 'ok' | 'fail'
   const [tarjeta, setTarjeta] = useState('');
   const [codigoTarjeta, setCodigoTarjeta] = useState('');
 
@@ -45,7 +46,7 @@ const Register = () => {
   const [direccionFarmacia, setDireccionFarmacia] = useState('');
   const [latFarmacia, setLatFarmacia] = useState('');
   const [lngFarmacia, setLngFarmacia] = useState('');
-  const [coordStatusFarmacia, setCoordStatusFarmacia] = useState(null); // null, 'ok', 'fail'
+  const [coordStatusFarmacia, setCoordStatusFarmacia] = useState(null);
   const [contactoFarmacia, setContactoFarmacia] = useState('');
   const [obrasSocialesAceptadas, setObrasSocialesAceptadas] = useState([]);
   const [obraSocialInput, setObraSocialInput] = useState('');
@@ -54,7 +55,6 @@ const Register = () => {
   // Delivery
   const [dniDelivery, setDniDelivery] = useState('');
   const [contactoDelivery, setContactoDelivery] = useState('');
-  // Images for delivery verification (frente/reverso)
   const [frontImageFile, setFrontImageFile] = useState(null);
   const [backImageFile, setBackImageFile] = useState(null);
   const [frontPreview, setFrontPreview] = useState(null);
@@ -62,27 +62,11 @@ const Register = () => {
   const [showHelpDelivery, setShowHelpDelivery] = useState(false);
   const acceptedFormatsText = 'Aceptamos fotos en JPG, JPEG, PNG, WEBP y HEIC. Si subís otro tipo de archivo (ej: PDF) no vas a poder continuar.';
 
-  const handleNext = (e) => {
-    e.preventDefault();
-    if (!role) {
-      setError('Por favor selecciona qué tipo de cuenta quieres crear.');
-      return;
-    }
-    setError('');
-    // fade out, then change step to allow a smooth transition
-    setIsFading(true);
-    setTimeout(() => {
-      setStep(2);
-      setIsFading(false);
-    }, 300);
-  };
-
-  // local state to control fade class during step transitions
-  const [isFading, setIsFading] = useState(false);
-
-  // Validaciones por campo
+  // Validaciones
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const detectEmojiOrInvisible = /[\p{Emoji_Presentation}\p{Extended_Pictographic}\p{C}]/u;
+
+  const setFieldError = (field, msg) => setErrors(prev => ({ ...prev, [field]: msg }));
 
   const validateField = (field, value) => {
     const v = value === undefined || value === null ? '' : String(value).trim();
@@ -120,12 +104,11 @@ const Register = () => {
         return '';
       case 'nroAfiliado':
         if (!v) return 'Por favor ingresa tu número de afiliado.';
-  if (/[^0-9-]/.test(v)) return 'Número de afiliado inválido.';
+        if (/[^0-9-]/.test(v)) return 'Número de afiliado inválido.';
         if (v.length > 50) return 'Número de afiliado demasiado largo.';
         return '';
       case 'vencimiento':
         if (!v) return 'Por favor indica la fecha de vencimiento.';
-        // Validar YYYY-MM-DD estrictamente y que sea futura y no demasiado lejana (10 años)
         {
           const parts = String(v).split('-').map(p => Number(p));
           const [y, m, d] = parts;
@@ -139,7 +122,6 @@ const Register = () => {
           if (dt > max) return 'La fecha de vencimiento es demasiado lejana.';
           return '';
         }
-        
       case 'fechaNacimiento':
         if (!v) return 'Por favor indica la fecha de nacimiento.';
         {
@@ -151,7 +133,6 @@ const Register = () => {
           const hoy = new Date(); hoy.setHours(0,0,0,0);
           dt.setHours(0,0,0,0);
           if (dt > hoy) return 'La fecha de nacimiento no puede ser futura.';
-          // edad máxima razonable: 120 años
           const limite = new Date(); limite.setFullYear(limite.getFullYear() - 120); limite.setHours(0,0,0,0);
           if (dt < limite) return 'La fecha de nacimiento indica una edad fuera de rango.';
           return '';
@@ -175,20 +156,28 @@ const Register = () => {
         if (v.length > 500) return 'Dirección demasiado larga.';
         return '';
       case 'coords':
-        // value expected as {lat, lng}
         if (!value) return 'No se encontraron las coordenadas. Usa el botón para buscarlas o completa la dirección.';
-        const latN = Number(value.lat);
-        const lngN = Number(value.lng);
-        if (!isFinite(latN) || !isFinite(lngN)) return 'Coordenadas inválidas.';
-        if (latN === 0 && lngN === 0) return 'Coordenadas inválidas.';
-        return '';
+        {
+          const latN = Number(value.lat);
+          const lngN = Number(value.lng);
+          if (!isFinite(latN) || !isFinite(lngN)) return 'Coordenadas inválidas.';
+          if (latN === 0 && lngN === 0) return 'Coordenadas inválidas.';
+          return '';
+        }
       default:
         return '';
     }
   };
 
-  const setFieldError = (field, msg) => {
-    setErrors(prev => ({ ...prev, [field]: msg }));
+  const handleNext = (e) => {
+    e.preventDefault();
+    if (!role) {
+      setError('Por favor selecciona qué tipo de cuenta quieres crear.');
+      return;
+    }
+    setError('');
+    setIsFading(true);
+    setTimeout(() => { setStep(2); setIsFading(false); }, 300);
   };
 
   const handleRegister = async (e) => {
@@ -196,90 +185,38 @@ const Register = () => {
     setError('');
     setSuccess('');
     try {
-      // Validar todos los campos antes de intentar crear el usuario
-      const validationErrors = {};
-      // campos comunes
-      validationErrors.email = validateField('email', email);
-      validationErrors.password = validateField('password', password);
+      // Validaciones básicas
+      const vEmail = validateField('email', email);
+      const vPass = validateField('password', password);
+      if (vEmail || vPass) {
+        setFieldError('email', vEmail);
+        setFieldError('password', vPass);
+        return;
+      }
+      // Evitar duplicados evidentes
+      const methods = await fetchSignInMethodsForEmail(auth, String(email).toLowerCase());
+      const emailExistsInAuth = methods && methods.length > 0;
+      const emailExistsInDb = await isEmailRegisteredInDb(email);
+      if (emailExistsInAuth || emailExistsInDb) {
+        setFieldError('email', 'Ese correo ya está registrado.');
+        return;
+      }
+      if (role === 'Usuario' && validateField('dni', dni)) {
+        setFieldError('dni', validateField('dni', dni));
+        return;
+      }
       if (role === 'Usuario') {
-        validationErrors.dni = validateField('dni', dni);
-        validationErrors.nombre = validateField('nombre', nombre);
-        validationErrors.apellido = validateField('apellido', apellido);
-        validationErrors.fechaNacimiento = validateField('fechaNacimiento', fechaNacimiento);
-        validationErrors.obraSocial = validateField('obraSocial', obraSocial);
-        validationErrors.nroAfiliado = validateField('nroAfiliado', nroAfiliado);
-        validationErrors.vencimiento = validateField('vencimiento', vencimiento);
-        validationErrors.cobertura = validateField('cobertura', cobertura);
-        validationErrors.direccion = validateField('direccion', direccion);
-        validationErrors.tarjeta = validateField('tarjeta', tarjeta);
-        validationErrors.codigoTarjeta = validateField('codigoTarjeta', codigoTarjeta);
-        validationErrors.coords = validateField('coords', { lat, lng });
-      } else if (role === 'Farmacia') {
-        validationErrors.nombreFarmacia = nombreFarmacia ? '' : 'Nombre de farmacia vacío';
-        validationErrors.direccionFarmacia = validateField('direccion', direccionFarmacia);
-      } else if (role === 'Distribuidor') {
-        validationErrors.dniDelivery = validateField('dni', dniDelivery);
-        validationErrors.fechaNacimiento = validateField('fechaNacimiento', fechaNacimiento);
-        // validar imagenes frente/reverso
-        if (!frontImageFile) validationErrors.frontImage = 'Por favor sube la imagen del frente del documento.';
-        if (!backImageFile) validationErrors.backImage = 'Por favor sube la imagen del reverso del documento.';
-      }
-      // filtrar y setear errores
-      Object.keys(validationErrors).forEach(k => setFieldError(k, validationErrors[k] || ''));
-      const hasErrors = Object.values(validationErrors).some(v => v);
-      if (hasErrors) {
-        setError('Por favor corrige los campos marcados arriba.');
-        return;
-      }
-
-      // Verificar duplicados en DB/Auth
-      // Email: comprobar en Auth (fetchSignInMethodsForEmail) y en Realtime DB
-      try {
-        const methods = await fetchSignInMethodsForEmail(auth, email);
-        if (methods && methods.length > 0) {
-          setFieldError('email', 'Este correo ya está registrado.');
-          setError('Este correo ya está registrado. Usa otro correo o inicia sesión.');
-          return;
-        }
-      } catch (e) {
-        // Si fetchSignInMethodsForEmail falla por red o limit, seguimos y comprobamos DB
-      }
-      const emailInDb = await isEmailRegisteredInDb(email);
-      if (emailInDb) {
-        setFieldError('email', 'Este correo ya está registrado.');
-        setError('Este correo ya está registrado. Usa otro correo o inicia sesión.');
-        return;
-      }
-
-      if (role === 'Usuario' || role === 'Distribuidor') {
-        const checkDni = role === 'Usuario' ? dni : dniDelivery;
-        if (await isDniRegistered(checkDni)) {
-          setFieldError('dni', 'Este DNI ya está registrado.');
-          setError('Este DNI ya está registrado. Si es tu caso, intenta recuperar la cuenta.');
+        const dniTaken = await isDniRegistered(dni);
+        if (dniTaken) {
+          setFieldError('dni', 'Ese DNI ya está registrado.');
           return;
         }
       }
 
-      // Helper para convertir File a base64 (DataURL)
-      const readFileAsDataURL = (file) => new Promise((resolve, reject) => {
-        try {
-          const reader = new FileReader();
-          reader.onload = (ev) => resolve(ev.target.result);
-          reader.onerror = (ev) => reject(ev);
-          reader.readAsDataURL(file);
-        } catch (e) {
-          reject(e);
-        }
-      });
-
-  // Variables para almacenar imágenes base64 de delivery (declaradas aquí para que estén
-  // visibles tanto dentro del bloque de creación como después al notificar a farmacias)
-  let frontBase64 = null;
-  let backBase64 = null;
-
-  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, String(email).toLowerCase(), password);
       const user = userCredential.user;
-      let userData = { email, role };
+
+      let userData = { email: String(email).toLowerCase(), role };
       if (role === 'Usuario') {
         userData = {
           ...userData,
@@ -291,173 +228,295 @@ const Register = () => {
           nroAfiliado,
           vencimiento,
           cobertura,
-            latitud: lat,
-            longitud: lng
-          ,
-          // guardar el string de dirección original tal como lo ingresó el usuario
-          addressString: direccion
+          direccion,
+          latitud: lat,
+          longitud: lng
         };
-        // Simulamos almacenamiento de tarjeta: guardamos versión enmascarada en la DB
-        if (tarjeta) {
-          const maskedCard = tarjeta.replace(/\d(?=\d{4})/g, '*');
-          const maskedCode = codigoTarjeta ? '***' : '';
-          userData.tarjeta = maskedCard;
-          userData.codigoTarjeta = maskedCode; // nunca almacenar CVV real en producción
-          try {
-            // Simulación adicional: almacenar (base64) en localStorage para pruebas
-            if (typeof window !== 'undefined' && window.localStorage) {
-              const raw = { tarjeta, codigoTarjeta };
-              window.localStorage.setItem('card_' + user.uid, btoa(JSON.stringify(raw)));
-            }
-          } catch (e) {
-            // no crítico, continuar
-            console.warn('No se pudo almacenar la tarjeta en localStorage (simulación)');
-          }
-        }
       } else if (role === 'Farmacia') {
         userData = {
           ...userData,
           nombreFarmacia,
+          direccionFarmacia,
           latitud: latFarmacia,
           longitud: lngFarmacia,
           contactoFarmacia,
           obrasSocialesAceptadas,
           horarios
-          ,
-          // guardar el string de dirección original tal como lo ingresó la farmacia
-          addressString: direccionFarmacia
         };
       } else if (role === 'Distribuidor') {
-  // convertir imagenes a base64 y guardarlas en DB para revisión
-        try {
-          if (frontImageFile) frontBase64 = await readFileAsDataURL(frontImageFile);
-          if (backImageFile) backBase64 = await readFileAsDataURL(backImageFile);
-        } catch (e) {
-          console.warn('No se pudo convertir las imágenes a base64', e);
-        }
         userData = {
           ...userData,
           dni: dniDelivery,
           fechaNacimiento,
           contacto: contactoDelivery,
-          deliveryImages: {
-            frente: frontBase64,
-            reverso: backBase64
-          },
-          // flag explícita para permitir login cuando la farmacia acepte
-          deliveryVerified: false,
-          // estado para que el farmacéutico pueda aceptar/rechazar
-          deliveryVerification: {
-            status: 'pendiente', // pendiente | accepted | rejected
-            message: '',
-            fechaSubida: new Date().toISOString()
-          }
+          deliveryVerification: { status: 'pendiente' },
+          dinero: 0
         };
       }
+
       await set(ref(db, 'users/' + user.uid), userData);
-      // Si es distribuidor, notificar a todas las farmacias registradas
-      if (role === 'Distribuidor') {
-        try {
-          const usersSnapshot = await get(ref(db, 'users'));
-          const usersData = usersSnapshot.val();
-          if (usersData) {
-            Object.entries(usersData).forEach(async ([farmUid, farmData]) => {
-              try {
-                if (farmData && farmData.role === 'Farmacia') {
-                  // crear notificación en el nodo de la farmacia
-                  await push(ref(db, `notificaciones/${farmUid}`), {
-                    tipo: 'delivery_registro',
-                    mensaje: `Se registró un nuevo delivery: ${email}`,
-                    fecha: new Date().toISOString(),
-                    deliveryUid: user.uid,
-                    deliveryEmail: email,
-                    frente: frontBase64,
-                    reverso: backBase64,
-                    status: 'pendiente'
-                  });
-                }
-              } catch (e) {
-                console.warn('No se pudo crear notificación para farmacia', farmUid, e);
-              }
-            });
-          }
-        } catch (e) {
-          console.warn('No se pudo obtener la lista de farmacias para notificar', e);
-        }
-      }
-  setSuccess('Registro exitoso. Ya podés iniciar sesión.');
-      setTimeout(() => {
-        navigate("/");
-      }, 1500);
+      setSuccess('Usuario registrado correctamente');
+      setTimeout(() => navigate('/'), 1200);
     } catch (err) {
       console.error(err);
-      setError('No se pudo crear la cuenta. Intenta de nuevo más tarde.');
+      setError('No pudimos registrar tu cuenta. Revisa los datos e intenta nuevamente.');
     }
   };
 
   return (
-    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      <VideoBackground src="/login-bg.mp4" />
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <h2 style={{ textAlign: 'center' }}>Registro</h2>
+      {step === 1 && (
+        <form onSubmit={handleNext} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '300px', gap: '10px', background: '#fff', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+          <label style={{ textAlign: 'center' }}>Tipo de usuario:</label>
+          <select value={role} onChange={e => setRole(e.target.value)} required style={{ width: '100%' }}>
+            <option value="">Selecciona...</option>
+            <option value="Usuario">Usuario</option>
+            <option value="Farmacia">Farmacia</option>
+            <option value="Distribuidor">Delivery/Repartidor</option>
+          </select>
+          <div style={{ width: '100%', textAlign: 'right' }}>
+            <button type="button" onClick={() => setShowFormat(v => !v)} style={{ background: 'none', border: 'none', color: '#1976d2', cursor: 'pointer' }}>
+              ¿Ver ejemplos de formato?
+            </button>
+          </div>
+          {showFormat && (
+            <div style={{ width: '100%', background: '#f8f8f8', padding: 12, borderRadius: 8, textAlign: 'left' }}>
+              {role === 'Usuario' && (
+                <div>
+                  <p>- Email: ejemplo <em>nombre@ejemplo.com</em>. Usa minúsculas y sin espacios.</p>
+                  <p>- Contraseña: mínimo 8 caracteres. Evita usar contraseñas obvias.</p>
+                  <p>- DNI: solo números, entre 6 y 10 dígitos.</p>
+                  <p>- Dirección: escribe la calle y número. Luego presiona “Obtener latitud y longitud”.</p>
+                </div>
+              )}
+              {role === 'Farmacia' && (
+                <div>
+                  <p>- Nombre: nombre comercial de la farmacia.</p>
+                  <p>- Dirección: escribe la dirección exacta y usa “Obtener latitud y longitud”.</p>
+                  <p>- Horarios: apertura y cierre por día (ej. 09:00 - 20:00). La apertura debe ser antes del cierre.</p>
+                </div>
+              )}
+              {role === 'Distribuidor' && (
+                <div>
+                  <p>- Email: ejemplo <em>nombre@ejemplo.com</em>. Usa minúsculas y sin espacios.</p>
+                  <p>- Contraseña: mínimo 8 caracteres. Evita usar contraseñas obvias.</p>
+                  <p>- DNI: solo números, entre 6 y 10 dígitos.</p>
+                  <p>- Contacto: número de teléfono para que podamos coordinar entregas.</p>
+                </div>
+              )}
+              {!role && (
+                <div>Selecciona un rol para ver ejemplos claros de formato.</div>
+              )}
+            </div>
+          )}
+          <button type="submit" style={{ width: '100%' }}>Siguiente</button>
+          {error && <p style={{ color: 'red', textAlign: 'center', width: '100%' }}>{error}</p>}
+        </form>
+      )}
 
-      <div className={(isFading ? 'fade-out ' : 'fade-in ') + 'form-step'}
-           style={{ maxWidth: "420px", width: '90%', background: 'rgba(255,255,255,0.95)', padding: "30px", borderRadius: "10px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", position: 'fixed', zIndex: 10, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-          <img src="/RecetApp.png" alt="RecetApp" style={{ width: 120, height: 'auto', objectFit: 'contain' }} onError={(e)=>{e.target.style.display='none'}} />
-        </div>
-        <h2 style={{ textAlign: 'center', marginBottom: 18 }}>Registro</h2>
-        {step === 1 ? (
-          <form onSubmit={handleNext} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <label>Tipo de usuario:</label>
-            <select value={role} onChange={e => setRole(e.target.value)} required>
-              <option value="">Selecciona...</option>
-              <option value="Usuario">Usuario</option>
-              <option value="Farmacia">Farmacia</option>
-              <option value="Distribuidor">Delivery/Repartidor</option>
-            </select>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={() => navigate('/')}>Volver al login</button>
-              <button type="submit">Siguiente</button>
-            </div>
-            {error && <div style={{ color: 'red' }}>{error}</div>}
-          </form>
-        ) : (
-          <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <button type="button" onClick={() => { setIsFading(true); setTimeout(()=>{ setStep(1); setIsFading(false); }, 300); }}>← Volver</button>
-              <button type="button" onClick={() => setShowFormat(s => !s)}>{showFormat ? 'Ocultar formato' : 'Formato esperado'}</button>
-            </div>
-            {role ? (
-              <div style={{ background: '#f7f7f7', padding: 8, borderRadius: 6 }}>
-                Registrando como: <strong>{role}</strong>
-                <button
-                  type="button"
-                  style={{ marginLeft: 8 }}
-                  onClick={() => { setIsFading(true); setTimeout(()=>{ setStep(1); setIsFading(false); }, 300); }}
-                >
-                  Cambiar
-                </button>
+      {step === 2 && (
+        <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '300px', gap: '10px', background: '#fff', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+          <input type="email" placeholder="Email" value={email} onChange={e => { setEmail(e.target.value); setFieldError('email',''); }} onBlur={e => setFieldError('email', validateField('email', e.target.value))} required style={{ width: '100%' }} />
+          {errors.email && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.email}</div>}
+          <input type="password" placeholder="Contraseña" value={password} onChange={e => { setPassword(e.target.value); setFieldError('password',''); }} onBlur={e => setFieldError('password', validateField('password', e.target.value))} required style={{ width: '100%' }} />
+          {errors.password && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.password}</div>}
+
+          {role === 'Usuario' && (
+            <>
+              <input type="text" placeholder="DNI" value={dni} onChange={e => { setDni(e.target.value); setFieldError('dni',''); }} onBlur={e => setFieldError('dni', validateField('dni', e.target.value))} required style={{ width: '100%' }} />
+              {errors.dni && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.dni}</div>}
+
+              <input type="text" placeholder="Nombre" value={nombre} onChange={e => { setNombre(e.target.value); setFieldError('nombre',''); }} onBlur={e => setFieldError('nombre', validateField('nombre', e.target.value))} required style={{ width: '100%' }} />
+              {errors.nombre && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.nombre}</div>}
+
+              <input type="text" placeholder="Apellido" value={apellido} onChange={e => { setApellido(e.target.value); setFieldError('apellido',''); }} onBlur={e => setFieldError('apellido', validateField('apellido', e.target.value))} required style={{ width: '100%' }} />
+              {errors.apellido && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.apellido}</div>}
+
+              <input type="date" placeholder="Fecha de nacimiento" value={fechaNacimiento} onChange={e => { setFechaNacimiento(e.target.value); setFieldError('fechaNacimiento',''); }} onBlur={e => setFieldError('fechaNacimiento', validateField('fechaNacimiento', e.target.value))} required style={{ width: '100%' }} />
+              {errors.fechaNacimiento && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.fechaNacimiento}</div>}
+
+              <input type="text" placeholder="Obra Social" value={obraSocial} onChange={e => { setObraSocial(e.target.value); setFieldError('obraSocial',''); }} onBlur={e => setFieldError('obraSocial', validateField('obraSocial', e.target.value))} required style={{ width: '100%' }} />
+              {errors.obraSocial && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.obraSocial}</div>}
+
+              <input type="text" placeholder="Nro. Afiliado" value={nroAfiliado} onChange={e => { setNroAfiliado(e.target.value); setFieldError('nroAfiliado',''); }} onBlur={e => setFieldError('nroAfiliado', validateField('nroAfiliado', e.target.value))} required style={{ width: '100%' }} />
+              {errors.nroAfiliado && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.nroAfiliado}</div>}
+
+              <input type="date" placeholder="Vencimiento" value={vencimiento} onChange={e => { setVencimiento(e.target.value); setFieldError('vencimiento',''); }} onBlur={e => setFieldError('vencimiento', validateField('vencimiento', e.target.value))} required style={{ width: '100%' }} />
+              {errors.vencimiento && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.vencimiento}</div>}
+
+              <input type="text" placeholder="Cobertura" value={cobertura} onChange={e => { setCobertura(e.target.value); setFieldError('cobertura',''); }} onBlur={e => setFieldError('cobertura', validateField('cobertura', e.target.value))} required style={{ width: '100%' }} />
+              {errors.cobertura && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.cobertura}</div>}
+
+              <input type="text" placeholder="Tarjeta de crédito/débito (opcional)" value={tarjeta} onChange={e => { setTarjeta(e.target.value); setFieldError('tarjeta',''); }} onBlur={e => setFieldError('tarjeta', validateField('tarjeta', e.target.value))} style={{ width: '100%' }} />
+              {errors.tarjeta && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.tarjeta}</div>}
+
+              <input type="text" placeholder="Código (CVV)" value={codigoTarjeta} onChange={e => { setCodigoTarjeta(e.target.value); setFieldError('codigoTarjeta',''); }} onBlur={e => setFieldError('codigoTarjeta', validateField('codigoTarjeta', e.target.value))} style={{ width: '100%' }} />
+              {errors.codigoTarjeta && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.codigoTarjeta}</div>}
+
+              <input type="text" placeholder="Dirección completa" value={direccion} onChange={e => { setDireccion(e.target.value); setFieldError('direccion',''); }} onBlur={e => setFieldError('direccion', validateField('direccion', e.target.value))} required style={{ width: '100%' }} />
+              {errors.direccion && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.direccion}</div>}
+
+              <button type="button" style={{ marginBottom: '10px', width: '100%', padding: '8px' }}
+                onClick={async () => {
+                  setCoordStatus(null);
+                  if (!direccion) return;
+                  try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion)}`);
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                      setLat(data[0].lat);
+                      setLng(data[0].lon);
+                      setCoordStatus('ok');
+                      setFieldError('coords','');
+                    } else {
+                      setLat(''); setLng(''); setCoordStatus('fail'); setFieldError('coords','Coordenadas no encontradas');
+                    }
+                  } catch {
+                    setLat(''); setLng(''); setCoordStatus('fail');
+                  }
+                }}
+              >Obtener latitud y longitud</button>
+              <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {coordStatus === 'ok' && (<span style={{ color: 'green', fontSize: '1.5em' }}>✔️</span>)}
+                {coordStatus === 'fail' && (<span style={{ color: 'red', fontSize: '1.5em' }}>❌</span>)}
+                {lat && lng && coordStatus === 'ok' && (<span><strong>Latitud:</strong> {lat} <strong>Longitud:</strong> {lng}</span>)}
+                {coordStatus === 'fail' && (<span>No se encontró la dirección.</span>)}
               </div>
-            ) : (
-              <>
-                <label>Tipo de usuario:</label>
-                <select value={role} onChange={e => setRole(e.target.value)} required>
-                  <option value="">Selecciona...</option>
-                  <option value="Usuario">Usuario</option>
-                  <option value="Farmacia">Farmacia</option>
-                  <option value="Distribuidor">Delivery/Repartidor</option>
-                </select>
-              </>
-            )}
-            <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
-            <input type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} required />
-            <button type="submit">Registrar</button>
-            {error && <div style={{ color: 'red' }}>{error}</div>}
-            {success && <div style={{ color: 'green' }}>{success}</div>}
-          </form>
-        )}
-      </div>
+            </>
+          )}
+
+          {role === 'Farmacia' && (
+            <>
+              <input type="text" placeholder="Nombre de la farmacia" value={nombreFarmacia} onChange={e => { setNombreFarmacia(e.target.value); setFieldError('nombreFarmacia',''); }} onBlur={e => setFieldError('nombreFarmacia', e.target.value ? '' : 'Nombre de farmacia vacío')} required style={{ width: '100%' }} />
+              {errors.nombreFarmacia && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.nombreFarmacia}</div>}
+
+              <input type="text" placeholder="Dirección completa" value={direccionFarmacia} onChange={e => { setDireccionFarmacia(e.target.value); setFieldError('direccionFarmacia',''); }} onBlur={e => setFieldError('direccionFarmacia', validateField('direccion', e.target.value))} required style={{ width: '100%' }} />
+              {errors.direccionFarmacia && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.direccionFarmacia}</div>}
+
+              <button type="button" style={{ marginBottom: '10px', width: '100%', padding: '8px' }}
+                onClick={async () => {
+                  setCoordStatusFarmacia(null);
+                  if (!direccionFarmacia) return;
+                  try {
+                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccionFarmacia)}`);
+                    const data = await response.json();
+                    if (data && data.length > 0) {
+                      setLatFarmacia(data[0].lat);
+                      setLngFarmacia(data[0].lon);
+                      setCoordStatusFarmacia('ok');
+                    } else {
+                      setLatFarmacia(''); setLngFarmacia(''); setCoordStatusFarmacia('fail');
+                    }
+                  } catch {
+                    setLatFarmacia(''); setLngFarmacia(''); setCoordStatusFarmacia('fail');
+                  }
+                }}
+              >Obtener latitud y longitud</button>
+              <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {coordStatusFarmacia === 'ok' && (<span style={{ color: 'green', fontSize: '1.5em' }}>✔️</span>)}
+                {coordStatusFarmacia === 'fail' && (<span style={{ color: 'red', fontSize: '1.5em' }}>❌</span>)}
+                {latFarmacia && lngFarmacia && coordStatusFarmacia === 'ok' && (<span><strong>Latitud:</strong> {latFarmacia} <strong>Longitud:</strong> {lngFarmacia}</span>)}
+                {coordStatusFarmacia === 'fail' && (<span>No se encontró la dirección.</span>)}
+              </div>
+
+              <input type="text" placeholder="Contacto" value={contactoFarmacia} onChange={e => setContactoFarmacia(e.target.value)} required style={{ width: '100%' }} />
+
+              <div style={{ width: '100%' }}>
+                <label>Obras sociales aceptadas:</label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  <input type="text" placeholder="Agregar obra social" value={obraSocialInput} onChange={e => setObraSocialInput(e.target.value)} style={{ flex: 1 }} />
+                  <button type="button" onClick={() => {
+                    if (obraSocialInput.trim() && !obrasSocialesAceptadas.includes(obraSocialInput.trim())) {
+                      setObrasSocialesAceptadas([...obrasSocialesAceptadas, obraSocialInput.trim()]);
+                      setObraSocialInput('');
+                    }
+                  }} style={{ padding: '8px' }}>Agregar</button>
+                </div>
+                <ul style={{ paddingLeft: '20px', marginBottom: '8px' }}>
+                  {obrasSocialesAceptadas.map((obra, idx) => (
+                    <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {obra}
+                      <button type="button" style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => {
+                        setObrasSocialesAceptadas(obrasSocialesAceptadas.filter((_, i) => i !== idx));
+                      }}>✖</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <HorariosFarmacia horarios={horarios} setHorarios={setHorarios} />
+            </>
+          )}
+
+          {role === 'Distribuidor' && (
+            <>
+              <input type="text" placeholder="DNI" value={dniDelivery} onChange={e => { setDniDelivery(e.target.value); setFieldError('dniDelivery',''); }} onBlur={e => setFieldError('dniDelivery', validateField('dni', e.target.value))} required style={{ width: '100%' }} />
+              {errors.dniDelivery && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.dniDelivery}</div>}
+
+              <input type="date" placeholder="Fecha de nacimiento" value={fechaNacimiento} onChange={e => { setFechaNacimiento(e.target.value); setFieldError('fechaNacimiento',''); }} onBlur={e => setFieldError('fechaNacimiento', validateField('fechaNacimiento', e.target.value))} required style={{ width: '100%' }} />
+              {errors.fechaNacimiento && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.fechaNacimiento}</div>}
+
+              <input type="text" placeholder="Datos de contacto" value={contactoDelivery} onChange={e => setContactoDelivery(e.target.value)} required style={{ width: '100%' }} />
+
+              {/* Subida de imágenes frente / reverso (validación básica de tipo) */}
+              <div style={{ width: '100%', marginTop: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <label>Imagen del frente del documento</label>
+                  <button type="button" onClick={() => setShowHelpDelivery(s => !s)} style={{ padding: '4px 8px' }}>?</button>
+                </div>
+                <input type="file" accept="image/*" onChange={e => {
+                  const f = e.target.files && e.target.files[0];
+                  if (f) {
+                    const name = String(f.name || '').toLowerCase();
+                    const isImageByType = f.type && f.type.startsWith('image/');
+                    const isImageByExt = name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.webp') || name.endsWith('.heic') || name.endsWith('.heif');
+                    if (isImageByType || isImageByExt) {
+                      setFrontImageFile(f);
+                      setFrontPreview(URL.createObjectURL(f));
+                      setFieldError('frontImage','');
+                    } else {
+                      setFrontImageFile(null);
+                      setFrontPreview(null);
+                      setFieldError('frontImage','Lo que estás cargando no parece una foto. Por favor subí una foto en JPG o PNG.');
+                    }
+                  }
+                }} />
+                {showHelpDelivery && (<div style={{ background: '#f9f9f9', padding: 8, borderRadius: 6, marginTop: 8 }}>{acceptedFormatsText}</div>)}
+                {errors.frontImage && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.frontImage}</div>}
+                {frontPreview && <img src={frontPreview} alt="Frente" style={{ width: '100%', marginTop: 8, borderRadius: 6 }} />}
+
+                <label style={{ marginTop: 10 }}>Imagen del reverso del documento</label>
+                <input type="file" accept="image/*" onChange={e => {
+                  const f = e.target.files && e.target.files[0];
+                  if (f) {
+                    const name = String(f.name || '').toLowerCase();
+                    const isImageByType = f.type && f.type.startsWith('image/');
+                    const isImageByExt = name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.webp') || name.endsWith('.heic') || name.endsWith('.heif');
+                    if (isImageByType || isImageByExt) {
+                      setBackImageFile(f);
+                      setBackPreview(URL.createObjectURL(f));
+                      setFieldError('backImage','');
+                    } else {
+                      setBackImageFile(null);
+                      setBackPreview(null);
+                      setFieldError('backImage','Lo que estás cargando no parece una foto. Por favor subí una foto en JPG o PNG.');
+                    }
+                  }
+                }} />
+                {errors.backImage && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.backImage}</div>}
+                {backPreview && <img src={backPreview} alt="Reverso" style={{ width: '100%', marginTop: 8, borderRadius: 6 }} />}
+              </div>
+            </>
+          )}
+
+          <button type="submit" style={{ width: '100%' }}>Registrar</button>
+          {error && <p style={{ color: 'red', textAlign: 'center' }}>{error}</p>}
+          {success && <p style={{ color: 'green', textAlign: 'center' }}>{success}</p>}
+        </form>
+      )}
     </div>
   );
-}
+};
 
 export default Register;
