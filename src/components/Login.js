@@ -6,10 +6,9 @@
  */
 
 import React, { useState } from "react";
-import VideoBackground from './VideoBackground';
 import { useNavigate } from "react-router-dom";
-import { signInWithEmailAndPassword, signOut, setPersistence, browserSessionPersistence } from "firebase/auth";
-import { ref, get, remove } from "firebase/database";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { ref, get } from "firebase/database";
 import { auth, db } from '../firebase';
 
 export default function Login({ botonMargin = 10, botonRegistro }) {
@@ -22,9 +21,6 @@ export default function Login({ botonMargin = 10, botonRegistro }) {
     e.preventDefault();
     setError("");
     try {
-      // Usar persistencia por sesión para que cada pestaña/ventana tenga su propia sesión
-      // Esto permite iniciar con distintas cuentas en diferentes pestañas del mismo origen.
-      await setPersistence(auth, browserSessionPersistence);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       const userRef = ref(db, 'users/' + user.uid);
@@ -33,38 +29,7 @@ export default function Login({ botonMargin = 10, botonRegistro }) {
         const userData = snapshot.val();
         // Redirección según rol usando useNavigate
         if (userData.role === 'Distribuidor') {
-          const dv = userData.deliveryVerification || { status: 'pendiente' };
-          // Permitir login si la farmacia marcó deliveryVerified = true o el status es accepted
-          if (userData.deliveryVerified === true || dv.status === 'accepted' || dv.status === 'accept') {
-            navigate('/distribuidor');
-          } else if (dv.status === 'pendiente' || dv.status === 'pending') {
-            // impedir inicio de sesión hasta que sea aceptado
-            await signOut(auth);
-            setError('Tu cuenta está pendiente de verificación por un farmacéutico.');
-            return;
-          } else if (dv.status === 'rejected' || dv.status === 'rechazado') {
-            // mostrar mensaje de rechazo y eliminar el usuario para que pueda registrarse de nuevo
-            const message = dv.message || 'Tu cuenta fue rechazada por el farmacéutico.';
-            try {
-              // borrar nodo en la base de datos
-              await remove(userRef);
-            } catch (errRemove) {
-              console.warn('No se pudo eliminar el registro en DB', errRemove);
-            }
-            try {
-              // eliminar cuenta de Auth (usuario ya está autenticado)
-              await user.delete();
-            } catch (errDel) {
-              console.warn('No se pudo eliminar el usuario de Auth', errDel);
-            }
-            setError(message + ' Puedes registrarte nuevamente.');
-            return;
-          } else {
-            // cualquier otro caso, impedir inicio
-            await signOut(auth);
-            setError('Tu cuenta no está autorizada para iniciar sesión.');
-            return;
-          }
+          navigate('/distribuidor');
         } else if (userData.role === 'Farmacia') {
           navigate('/farmacia');
         } else {
@@ -74,22 +39,13 @@ export default function Login({ botonMargin = 10, botonRegistro }) {
         setError('No se encontró el rol del usuario.');
       }
     } catch (err) {
-      console.error(err);
-      setError('No pudimos iniciar sesión. Verifica tu correo y contraseña, y vuelve a intentar.');
+      setError(err.message);
     }
   };
 
-  // Video background moved to a reusable component (see src/components/VideoBackground.js)
-
   return (
-    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      {/* Video de fondo (reusable) */}
-      <VideoBackground src="/login-bg.mp4" />
-
-  <div className="fade-in" style={{ maxWidth: "420px", width: '90%', background: 'rgba(255,255,255,0.95)', padding: "30px", borderRadius: "10px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", position: 'fixed', zIndex: 10, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-          <img src="/RecetApp.png" alt="RecetApp" style={{ width: 120, height: 'auto', objectFit: 'contain' }} onError={(e)=>{e.target.style.display='none'}} />
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div style={{ maxWidth: "350px", width: '100%', background: '#fff', padding: "30px", borderRadius: "10px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
         <h2 style={{ textAlign: 'center', marginBottom: 18 }}>Login</h2>
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
           <div style={{ width: '100%' }}>
