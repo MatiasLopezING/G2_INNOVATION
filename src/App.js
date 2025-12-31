@@ -5,15 +5,30 @@ import Register from "./components/Register";
 import Distribuidor from "./components/Distribuidor";
 import Farmacia from "./components/Farmacia";
 import Usuario from "./components/Usuario";
+import RevisionDeliverys from "./components/RevisionDeliverys";
+import RevisionRecetas from "./components/RevisionRecetas";
+import FarmaciaNotificaciones from "./components/FarmaciaNotificaciones";
 
 function HomeLogin() {
   const navigate = useNavigate();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      <img src="/icons/recetapp.png" alt="RecetApp" style={{ width: 96, height: 96, objectFit: 'contain', marginBottom: 16 }} />
-      <h1 style={{ textAlign: 'center', marginBottom: 30 }}>Bienvenido a G2 INNOVATION</h1>
-      <div style={{ width: '100%', maxWidth: '350px' }}>
-        <Login botonMargin={6} botonRegistro={() => navigate("/register")}/>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "grid",
+        placeItems: "center",
+        padding: "24px",
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 420 }}>
+        <div style={{ display: "grid", placeItems: "center", marginBottom: 12 }}>
+          <img
+            src="/icons/recetapp.png"
+            alt="RecetApp"
+            style={{ width: 84, height: 84, objectFit: "contain" }}
+          />
+        </div>
+        <Login botonMargin={6} botonRegistro={() => navigate("/register")} />
       </div>
     </div>
   );
@@ -27,6 +42,9 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/distribuidor" element={<Distribuidor />} />
         <Route path="/farmacia" element={<Farmacia />} />
+        <Route path="/notificaciones" element={<FarmaciaNotificaciones />} />
+        <Route path="/revision-deliverys" element={<RevisionDeliverys />} />
+        <Route path="/revision-recetas" element={<RevisionRecetas />} />
         <Route path="/usuario" element={<Usuario />} />
       </Routes>
     </BrowserRouter>

@@ -1,6 +1,6 @@
 // Funciones utilitarias para lógica repetida de productos y compras
 // Utilidades para manipulación de productos y compras en Firebase
-import { ref, onValue, update, get } from "firebase/database";
+import { ref, onValue, update, get, remove } from "firebase/database";
 import { db } from "../firebase";
 
 // Itera sobre todas las compras y ejecuta una acción para cada compra que cumpla la condición
@@ -40,9 +40,9 @@ export async function updateProductoEstado(productoId, estado, extra = {}) {
 export async function eliminarCompraYProducto(productoId) {
   await forEachCompra(
     compra => compra.productoId === productoId,
-    (uid, compraId) => update(ref(db, `compras/${uid}/${compraId}`), null)
+    (uid, compraId) => remove(ref(db, `compras/${uid}/${compraId}`))
   );
-  await update(ref(db, `productos/${productoId}`), null);
+  await remove(ref(db, `productos/${productoId}`));
 }
 
 // Repone el stock de un producto
@@ -59,8 +59,14 @@ export async function isDniRegistered(dni) {
   const snap = await get(ref(db, 'users'));
   const data = snap.val();
   if (!data) return false;
-  // Recorremos usuarios y buscamos coincidencias de dni exacto
-  return Object.values(data).some(user => user && (user.dni === dni || user.dni === Number(dni) || String(user.dni) === String(dni)));
+  return Object.values(data).some(user => {
+    if (!user) return false;
+    // Si es distribuidor y está rechazado, permitir re-registro (ignorar su DNI)
+    if (user.role === 'Distribuidor' && user.deliveryVerification && user.deliveryVerification.status === 'rejected') {
+      return false;
+    }
+    return (user.dni === dni || user.dni === Number(dni) || String(user.dni) === String(dni));
+  });
 }
 
 // Verifica si un email ya está registrado en la base de datos de usuarios (Realtime DB)

@@ -5,6 +5,7 @@
  * No recibe props. Utiliza componentes internos para la lógica principal.
  */
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import FarmaciaProductos from './FarmaciaProductos';
 import FarmaciaVentas from './FarmaciaVentas';
 import RevisionRecetas from './RevisionRecetas';
@@ -13,17 +14,18 @@ import Header from './Header';
 
 const Farmacia = () => {
   const [mostrarRecetas, setMostrarRecetas] = useState(false);
-  const [mostrarDeliverys, setMostrarDeliverys] = useState(false);
+  const [mostrarRevisionDeliverys, setMostrarRevisionDeliverys] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div style={{ background: '#fff', minHeight: '100vh', padding: '20px' }}>
-      <Header title="Farmacia" />
+      <Header title="Farmacia" logoSize={48} />
       <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
         <button
-          onClick={() => setMostrarRecetas(!mostrarRecetas)}
+          onClick={() => navigate('/notificaciones')}
           style={{
             padding: '10px 20px',
-            backgroundColor: mostrarRecetas ? '#dc3545' : '#007bff',
+            backgroundColor: '#007bff',
             color: 'white',
             border: 'none',
             borderRadius: '5px',
@@ -31,32 +33,13 @@ const Farmacia = () => {
             fontWeight: 'bold'
           }}
         >
-          {mostrarRecetas ? 'Ocultar Recetas' : '📋 Revisar Recetas Médicas'}
-        </button>
-        <button
-          onClick={() => setMostrarDeliverys(!mostrarDeliverys)}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: mostrarDeliverys ? '#dc3545' : '#28a745',
-            color: 'white',
-            border: 'none',
-            borderRadius: '5px',
-            cursor: 'pointer',
-            fontWeight: 'bold'
-          }}
-        >
-          {mostrarDeliverys ? 'Ocultar Registros Delivery' : '🚚 Revisar Registros Delivery'}
+          🔔 Notificaciones
         </button>
       </div>
-      {mostrarRecetas ? (
-        <RevisionRecetas />
-      ) : (
-        <>
-          <FarmaciaProductos />
-          <FarmaciaVentas />
-        </>
-      )}
-      {mostrarDeliverys && <RevisionDeliverys />}
+      {/* Si está activa la vista de revisión de deliverys, ocultar productos y ventas */}
+      {/* Vista normal: productos y ventas */}
+      <FarmaciaProductos />
+      <FarmaciaVentas />
     </div>
   );
 };

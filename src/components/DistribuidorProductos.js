@@ -5,7 +5,7 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { ref, onValue, update } from "firebase/database";
+import { ref, onValue, update, off, get, push } from "firebase/database";
 import { db, auth } from "../firebase";
 import { updateCompraEstado, updateProductoEstado, eliminarCompraYProducto } from "../utils/firebaseUtils";
 
@@ -25,6 +25,125 @@ function DistribuidorProductos() {
   const [modalProductId, setModalProductId] = useState(null);
   const [returnModalProductId, setReturnModalProductId] = useState(null); // para mostrar modal de devolución
   const [addressMap, setAddressMap] = useState({}); // productId -> { farmaciaAddr, entregaAddr }
+  const [canReceiveWork, setCanReceiveWork] = useState(false);
+  const [verifStatus, setVerifStatus] = useState(null); // 'accepted' | 'pendiente' | 'rejected' | null
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [previousFront, setPreviousFront] = useState(null);
+  const [previousBack, setPreviousBack] = useState(null);
+  // Reintento verificación
+  const [retryFrontFile, setRetryFrontFile] = useState(null);
+  const [retryBackFile, setRetryBackFile] = useState(null);
+  const [retryFrontPreview, setRetryFrontPreview] = useState(null);
+  const [retryBackPreview, setRetryBackPreview] = useState(null);
+  const [retryError, setRetryError] = useState('');
+  const [retryMsg, setRetryMsg] = useState('');
+  const [retryProcessing, setRetryProcessing] = useState(false);
+  const [showRetryForm, setShowRetryForm] = useState(false);
+  // Notificaciones dirigidas al distribuidor (aceptado / rechazado)
+  const [deliveryNotifs, setDeliveryNotifs] = useState([]);
+  const [lastNotifUpdate, setLastNotifUpdate] = useState(null);
+
+  // Leer verificación del distribuidor actual y actualizar gating de trabajos
+  useEffect(() => {
+    const u = auth.currentUser;
+    if (!u) return;
+    const userRef = ref(db, `users/${u.uid}`);
+    const unsub = onValue(userRef, (snap) => {
+      const data = snap.val() || {};
+      const status = data?.deliveryVerification?.status || (data?.deliveryVerified ? 'accepted' : null);
+      setVerifStatus(status);
+      setCanReceiveWork(status === 'accepted');
+      if (status === 'rejected') {
+        setRejectionReason(data?.deliveryVerification?.message || 'Sin motivo proporcionado.');
+        setPreviousFront(data?.deliveryVerification?.frente || null);
+        setPreviousBack(data?.deliveryVerification?.reverso || null);
+      } else {
+        setRejectionReason('');
+        setPreviousFront(null);
+        setPreviousBack(null);
+      }
+    });
+    return () => off(userRef);
+  }, []);
+
+  // Escuchar notificaciones del distribuidor para mostrar mensajes de farmacia
+  useEffect(() => {
+    const u = auth.currentUser;
+    if (!u) return;
+    const notifRef = ref(db, `notificaciones/${u.uid}`);
+    const unsub = onValue(notifRef, (snap) => {
+      const data = snap.val() || {};
+      const list = Object.entries(data).map(([id, n]) => ({ id, ...n }))
+        .filter(n => n.tipo === 'delivery_aceptado' || n.tipo === 'delivery_rechazado')
+        .sort((a,b) => new Date(b.fecha || 0) - new Date(a.fecha || 0));
+      setDeliveryNotifs(list);
+      setLastNotifUpdate(new Date());
+    });
+    return () => off(notifRef);
+  }, []);
+
+  // Utilidad convertir archivo a Base64 data URL
+  const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    } catch (e) { reject(e); }
+  });
+
+  const handleResubmitVerification = async (e) => {
+    e.preventDefault();
+    setRetryError(''); setRetryMsg('');
+    if (!retryFrontFile || !retryBackFile) {
+      setRetryError('Debes subir ambas imágenes (frente y reverso).');
+      return;
+    }
+    const u = auth.currentUser;
+    if (!u) {
+      setRetryError('Sesión no válida. Vuelve a iniciar sesión.');
+      return;
+    }
+    setRetryProcessing(true);
+    try {
+      const frenteB64 = await fileToDataUrl(retryFrontFile);
+      const reversoB64 = await fileToDataUrl(retryBackFile);
+      await update(ref(db, `users/${u.uid}`), {
+        deliveryVerification: {
+          status: 'pendiente',
+            frente: frenteB64,
+            reverso: reversoB64,
+            fechaReintento: new Date().toISOString(),
+            message: ''
+        }
+      });
+      // Enviar notificación a todas las farmacias nuevamente
+      const allUsersSnap = await get(ref(db, 'users'));
+      const allUsers = allUsersSnap.val() || {};
+      Object.entries(allUsers).forEach(([uidFarmacia, userObj]) => {
+        if (userObj && userObj.role === 'Farmacia') {
+          push(ref(db, `notificaciones/${uidFarmacia}`), {
+            tipo: 'delivery_registro',
+            deliveryUid: u.uid,
+            deliveryEmail: (auth.currentUser.email || '').toLowerCase(),
+            frente: frenteB64,
+            reverso: reversoB64,
+            fecha: Date.now(),
+            estado: 'pendiente'
+          }).catch(()=>{});
+        }
+      });
+      setRetryMsg('Reintento enviado. Espera aprobación.');
+      setShowRetryForm(false);
+      setRetryFrontFile(null); setRetryBackFile(null);
+      setRetryFrontPreview(null); setRetryBackPreview(null);
+      setTimeout(()=> setRetryMsg(''), 4000);
+    } catch (err) {
+      console.error(err);
+      setRetryError('No se pudo enviar el reintento. Intenta nuevamente.');
+    }
+    setRetryProcessing(false);
+  };
 
   // Timer para pedidos en estado "enviando"
   useEffect(() => {
@@ -73,6 +192,10 @@ function DistribuidorProductos() {
   }, [timers, productos]);
   // Handler para aceptar pedido
   const handleAceptarPedido = async (id) => {
+    if (!canReceiveWork) {
+      alert('Aún no estás aprobado por una farmacia. Podés iniciar sesión, pero no recibir pedidos hasta la aprobación.');
+      return;
+    }
     // no permitir aceptar si ya tenemos un pedido aceptado distinto
     if (acceptedOrderId && acceptedOrderId !== id) {
       alert('Ya tenés un pedido activo. Entregá ese pedido antes de aceptar otro.');
@@ -180,7 +303,8 @@ function DistribuidorProductos() {
       const productosEnviando = data
         ? Object.entries(data)
             .map(([id, p]) => ({ id, ...p }))
-            .filter((p) => p.estado === "enviando")
+            // Mostrar sólo pedidos en 'enviando' y, si requieren receta, que estén aprobados
+            .filter((p) => p.estado === "enviando" && (!p.requiereReceta || p.recetaAprobada === true))
         : [];
       setProductos(productosEnviando);
     });
@@ -346,6 +470,91 @@ function DistribuidorProductos() {
   return (
     <div style={{ maxWidth: "700px", margin: "auto", padding: "20px" }}>
       <h2>Productos para entregar</h2>
+      {verifStatus !== 'accepted' && (
+        <div style={{ background:'#fff3cd', border:'1px solid #ffeeba', color:'#856404', padding:10, borderRadius:6, marginBottom:12 }}>
+          {verifStatus === 'pendiente' && 'Tu registro está pendiente de aprobación por una farmacia. Podés navegar, pero no vas a recibir pedidos hasta que te aprueben.'}
+          {verifStatus === 'rejected' && 'Tu registro fue rechazado. Podés reintentar enviando nuevamente las imágenes del documento.'}
+          {!verifStatus && 'Aún no enviaste verificación. Envía tus imágenes para comenzar el proceso.'}
+        </div>
+      )}
+      {deliveryNotifs.length > 0 && (
+        <div style={{ background:'#e9f7ff', border:'1px solid #b6e2f9', padding:10, borderRadius:6, marginBottom:16 }}>
+          <strong>Notificaciones de farmacia:</strong>
+          <ul style={{ margin:'8px 0 0', paddingLeft:18 }}>
+            {deliveryNotifs.slice(0,5).map(n => (
+              <li key={n.id} style={{ fontSize:13 }}>
+                {n.tipo === 'delivery_aceptado' && (
+                  <span style={{ color:'#2e7d32' }}>✔ {n.mensaje || 'Aprobado'}</span>
+                )}
+                {n.tipo === 'delivery_rechazado' && (
+                  <span style={{ color:'#c62828' }}>✖ {n.mensaje || 'Rechazado'}</span>
+                )}
+                {n.fecha && (
+                  <span style={{ color:'#555', marginLeft:6 }}>
+                    ({new Date(n.fecha).toLocaleString()})
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          {deliveryNotifs.length > 5 && <div style={{ fontSize:11, color:'#555', marginTop:4 }}>Mostrando últimas 5. (Total {deliveryNotifs.length})</div>}
+          {lastNotifUpdate && <div style={{ fontSize:10, color:'#777', marginTop:4 }}>Actualizado: {lastNotifUpdate.toLocaleTimeString()}</div>}
+        </div>
+      )}
+      {(verifStatus === 'rejected' || !verifStatus || verifStatus === null) && (
+        <div style={{ background:'#f8f9fa', border:'1px solid #ddd', padding:12, borderRadius:6, marginBottom:18 }}>
+          {verifStatus === 'rejected' && rejectionReason && (
+            <div style={{ marginBottom:10, background:'#ffe6e6', border:'1px solid #ffcccc', padding:8, borderRadius:4 }}>
+              <strong>Motivo del rechazo:</strong> {rejectionReason}
+            </div>
+          )}
+          {verifStatus === 'rejected' && (previousFront || previousBack) && (
+            <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:10 }}>
+              {previousFront && (
+                <div style={{ textAlign:'center' }}>
+                  <span style={{ fontSize:12 }}>Frente anterior</span>
+                  <img src={previousFront} alt="Frente anterior" style={{ width:80, height:'auto', display:'block', marginTop:4, borderRadius:4, objectFit:'cover', border:'1px solid #ccc' }} />
+                </div>
+              )}
+              {previousBack && (
+                <div style={{ textAlign:'center' }}>
+                  <span style={{ fontSize:12 }}>Reverso anterior</span>
+                  <img src={previousBack} alt="Reverso anterior" style={{ width:80, height:'auto', display:'block', marginTop:4, borderRadius:4, objectFit:'cover', border:'1px solid #ccc' }} />
+                </div>
+              )}
+            </div>
+          )}
+          {!showRetryForm && (
+            <button onClick={() => { setShowRetryForm(true); setRetryError(''); }} style={{ padding:'8px 12px' }}>Enviar verificación</button>
+          )}
+          {showRetryForm && (
+            <form onSubmit={handleResubmitVerification} style={{ display:'flex', flexDirection:'column', gap:10, marginTop:10 }}>
+              <div>
+                <label>Frente del documento:</label>
+                <input type="file" accept="image/*" onChange={(e)=> {
+                  const f = e.target.files && e.target.files[0];
+                  if (f) { setRetryFrontFile(f); setRetryFrontPreview(URL.createObjectURL(f)); }
+                }} />
+                {retryFrontPreview && <img src={retryFrontPreview} alt="Frente" style={{ width:100, marginTop:6, borderRadius:4 }} />}
+              </div>
+              <div>
+                <label>Reverso del documento:</label>
+                <input type="file" accept="image/*" onChange={(e)=> {
+                  const f = e.target.files && e.target.files[0];
+                  if (f) { setRetryBackFile(f); setRetryBackPreview(URL.createObjectURL(f)); }
+                }} />
+                {retryBackPreview && <img src={retryBackPreview} alt="Reverso" style={{ width:100, marginTop:6, borderRadius:4 }} />}
+              </div>
+              {retryError && <div style={{ color:'red' }}>{retryError}</div>}
+              {retryMsg && <div style={{ color:'green' }}>{retryMsg}</div>}
+              <div style={{ display:'flex', gap:8 }}>
+                <button type="submit" disabled={retryProcessing} style={{ background:'#007bff', color:'#fff', padding:'8px 12px' }}>{retryProcessing ? 'Enviando...' : 'Enviar reintento'}</button>
+                <button type="button" onClick={() => { setShowRetryForm(false); setRetryFrontFile(null); setRetryBackFile(null); setRetryFrontPreview(null); setRetryBackPreview(null); }} style={{ padding:'8px 12px' }}>Cancelar</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
       {/* Dinero acumulado: feature removed */}
       {productos.length === 0 ? (
         <p>No hay productos en estado 'Enviando'.</p>
@@ -379,7 +588,7 @@ function DistribuidorProductos() {
                     </span>
                   )}
                   {prod.estado === "enviando" && timers[prod.id] > 0 && (
-                        <button onClick={() => handleAceptarPedido(prod.id)} disabled={procesando === prod.id || (acceptedOrderId && acceptedOrderId !== prod.id)} style={{ marginLeft: "10px" }}>
+                    <button onClick={() => handleAceptarPedido(prod.id)} disabled={!canReceiveWork || procesando === prod.id || (acceptedOrderId && acceptedOrderId !== prod.id)} style={{ marginLeft: "10px" }}>
                           {procesando === prod.id ? "Procesando..." : (acceptedOrderId === prod.id ? "Pedido aceptado" : "Aceptar pedido")}
                         </button>
                   )}

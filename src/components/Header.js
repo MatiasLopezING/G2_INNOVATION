@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 
-const Header = ({ title }) => {
+const Header = ({ title, logoSize = 70 }) => {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -17,7 +17,7 @@ const Header = ({ title }) => {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <img src="/icons/recetapp.png" alt="RecetApp" style={{ height: 36, width: 36, objectFit: 'contain' }} />
+        <img src="/icons/recetapp.png" alt="RecetApp" style={{ height: logoSize, width: logoSize, objectFit: 'contain' }} />
         <h1 style={{ margin: 0 }}>{title}</h1>
       </div>
       <div>

@@ -4,15 +4,18 @@
  *
  * No recibe props. Utiliza Firebase para obtener y actualizar recetas.
  */
-import React, { useEffect, useState } from 'react';
-import { ref, onValue, update, push, remove } from 'firebase/database';
+import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ref, onValue, update, push, get } from 'firebase/database';
 import { db, auth } from '../firebase';
 
-const RevisionRecetas = () => {
+const RevisionRecetas = ({ embedded = false, onClose }) => {
   const [recetas, setRecetas] = useState([]);
   const [mensaje, setMensaje] = useState('');
   const [comentarioRechazo, setComentarioRechazo] = useState('');
   const [modalReceta, setModalReceta] = useState(null);
+  const [userMap, setUserMap] = useState({}); // uid -> {nombre, email, telefono, ...}
+  const enProcesoRef = useRef(new Set()); // evita doble click de acciones por receta
 
   const abrirModalReceta = (imagenBase64) => {
     setModalReceta(imagenBase64);
@@ -38,6 +41,58 @@ const RevisionRecetas = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  // Fallback: refrescar cada 2 segundos por si el listener no dispara en el entorno
+  useEffect(() => {
+    let mounted = true;
+    const intervalId = setInterval(async () => {
+      try {
+        const uid = auth.currentUser?.uid;
+        if (!uid) return;
+        const snap = await get(ref(db, 'recetas'));
+        const data = snap.val();
+        const lista = data
+          ? Object.entries(data).map(([id, receta]) => ({ id, ...receta }))
+              .filter(receta => receta.farmaciaId === uid && receta.estado === 'pendiente')
+          : [];
+        if (!mounted) return;
+        setRecetas(prev => (prev.length !== lista.length ? lista : prev));
+      } catch {}
+    }, 2000);
+    return () => { mounted = false; clearInterval(intervalId); };
+  }, []);
+
+  // Cargar datos de usuario para cada usuarioId involucrado en las recetas
+  useEffect(() => {
+    const uids = Array.from(new Set(recetas.map(r => r.usuarioId).filter(Boolean)));
+    const missing = uids.filter(uid => !userMap[uid]);
+    if (missing.length === 0) return;
+    missing.forEach(async (uid) => {
+      try {
+        const info = await new Promise(resolve => {
+          onValue(ref(db, `users/${uid}`), snap => resolve(snap.val()), { onlyOnce: true });
+        });
+        setUserMap(prev => ({ ...prev, [uid]: info || {} }));
+      } catch (e) {
+        console.warn('No se pudo obtener datos de usuario', uid, e);
+        setUserMap(prev => ({ ...prev, [uid]: {} }));
+      }
+    });
+  }, [recetas]);
+
+  const renderUsuario = (uid) => {
+    if (!uid) return '—';
+    const info = userMap[uid];
+    if (!info) return uid; // aún cargando
+    const nombre = info.nombre || info.displayName || info.name;
+    const email = info.email;
+    const telefono = info.telefono || info.phone;
+    if (nombre && email) return `${nombre} (${email})`;
+    if (nombre) return nombre;
+    if (email) return email;
+    if (telefono) return telefono;
+    return uid;
+  };
 
   // Aprueba la receta y notifica al usuario
   const aprobarReceta = async (recetaId, productoId) => {
@@ -107,6 +162,7 @@ const RevisionRecetas = () => {
 
   // Rechaza la receta y notifica al usuario
   const rechazarReceta = async (recetaId, productoId) => {
+    if (enProcesoRef.current.has(recetaId)) return; // evitar doble ejecución
     if (!comentarioRechazo.trim()) {
       setMensaje('Por favor proporciona un motivo para el rechazo');
       return;
@@ -114,42 +170,79 @@ const RevisionRecetas = () => {
     const user = auth.currentUser;
     if (!user) return;
     try {
+      enProcesoRef.current.add(recetaId);
+      // Obtener datos de la receta para identificar usuario y cantidad
+      const recetaSnapshot = await new Promise(resolve => {
+        onValue(ref(db, `recetas/${recetaId}`), snapshot => resolve(snapshot.val()), { onlyOnce: true });
+      });
+
+      const usuarioId = recetaSnapshot?.usuarioId;
+      const cantidad = recetaSnapshot?.cantidad || 1;
+      const productoNombre = recetaSnapshot?.productoNombre || '';
+
+      // Actualizar estado de la receta a rechazada con motivo
       await update(ref(db, `recetas/${recetaId}`), {
         estado: 'rechazada',
         fechaRevision: new Date().toISOString(),
         revisadoPor: user.uid,
         comentarioRechazo
       });
-      await push(ref(db, `notificaciones/${recetaId}`), {
-        tipo: 'receta_rechazada',
-        mensaje: `Tu receta médica para el producto ha sido rechazada. Motivo: ${comentarioRechazo}`,
-        fecha: new Date().toISOString(),
-        productoId: productoId
-      });
+
+      // Notificar al usuario correspondiente (no al id de la receta)
+      if (usuarioId) {
+        await push(ref(db, `notificaciones/${usuarioId}`), {
+          tipo: 'receta_rechazada',
+          mensaje: `Tu receta médica${productoNombre ? ` para ${productoNombre}` : ''} ha sido rechazada. Motivo: ${comentarioRechazo}`,
+          fecha: new Date().toISOString(),
+          productoId: productoId
+        });
+      }
+
+      // Reponer stock del producto SOLO si existe una compra activa asociada (evita sumar por recetas pendientes)
+      if (productoId && usuarioId) {
+        const comprasSnap = await get(ref(db, `compras/${usuarioId}`));
+        const compras = comprasSnap.val() || {};
+        const activas = Object.entries(compras).filter(([, c]) => c && c.productoId === productoId && c.estado === 'enviando');
+
+        if (activas.length > 0) {
+          // Cancelar compras activas y reponer stock una vez
+          for (const [compraId] of activas) {
+            await update(ref(db, `compras/${usuarioId}/${compraId}`), { estado: 'cancelado', motivo: 'receta_rechazada', fechaCancelacion: Date.now() });
+          }
+          const prodSnap = await get(ref(db, `productos/${productoId}`));
+          const prod = prodSnap.val();
+          if (prod) {
+            const nuevoStock = (prod.stock || 0) + cantidad;
+            const updateProducto = { stock: nuevoStock };
+            if (prod.estado === 'enviando') {
+              updateProducto.estado = 'disponible';
+              updateProducto.recetaAprobada = false;
+            }
+            await update(ref(db, `productos/${productoId}`), updateProducto);
+          }
+        }
+      }
+
       setMensaje('Receta rechazada correctamente');
       setComentarioRechazo('');
       setTimeout(() => setMensaje(''), 3000);
     } catch (error) {
       console.error(error);
       setMensaje('No se pudo rechazar la receta. Intenta nuevamente.');
+    } finally {
+      enProcesoRef.current.delete(recetaId);
     }
   };
 
-  // Elimina receta
-  const eliminarReceta = async (recetaId) => {
-    try {
-      await remove(ref(db, `recetas/${recetaId}`));
-      setMensaje('Receta eliminada');
-      setTimeout(() => setMensaje(''), 2000);
-    } catch (error) {
-      console.error(error);
-      setMensaje('No se pudo eliminar la receta. Intenta nuevamente.');
-    }
-  };
-
+  const navigate = useNavigate();
   return (
-    <div style={{ maxWidth: '700px', margin: 'auto', padding: '20px' }}>
-      <h2>Revisión de Recetas Médicas</h2>
+    <div style={{ maxWidth: '900px', margin: '40px auto', padding: '20px' }}>
+      {!embedded && (
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+          <h2 style={{ margin:0 }}>Revisión de Recetas Médicas</h2>
+          <button onClick={() => (typeof onClose === 'function' ? onClose() : navigate(-1))} style={{ padding:'6px 12px', background:'#007bff', color:'#fff', border:'none', borderRadius:4, cursor:'pointer' }}>Volver</button>
+        </div>
+      )}
       {mensaje && <p style={{ color: mensaje.includes('Error') ? 'red' : 'green' }}>{mensaje}</p>}
       {recetas.length === 0 ? (
         <p>No hay recetas pendientes.</p>
@@ -168,7 +261,7 @@ const RevisionRecetas = () => {
             {recetas.map(receta => (
               <tr key={receta.id}>
                 <td>{receta.productoNombre}</td>
-                <td>{receta.usuarioId}</td>
+                <td title={receta.usuarioId}>{renderUsuario(receta.usuarioId)}</td>
                 <td>{receta.fechaSubida ? new Date(receta.fechaSubida).toLocaleString() : 'Sin fecha'}</td>
                 <td style={{ textAlign: 'center' }}>
                   {receta.imagenBase64 ? (
@@ -191,7 +284,6 @@ const RevisionRecetas = () => {
                 </td>
                 <td>
                   <button onClick={() => aprobarReceta(receta.id, receta.productoId)} style={{ marginRight: 8 }}>Aprobar</button>
-                  <button onClick={() => eliminarReceta(receta.id)} style={{ marginRight: 8 }}>Eliminar</button>
                   <input
                     type="text"
                     placeholder="Motivo rechazo"

@@ -3,42 +3,105 @@
  * Muestra notificaciones dirigidas a la farmacia (node: notificaciones/{farmaciaUid})
  * y permite Aceptar o Rechazar cada registro, mostrando las dos imágenes (frente/reverso).
  */
-import React, { useEffect, useState } from 'react';
-import { ref, onValue, update, push, remove } from 'firebase/database';
-import { db, auth } from '../firebase';
+import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ref, onValue, update, push, remove, off, get } from 'firebase/database';
+import { db, auth, functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
 import { onAuthStateChanged } from 'firebase/auth';
 
-const RevisionDeliverys = () => {
+const RevisionDeliverys = ({ onClose, embedded = false }) => {
   const [notifs, setNotifs] = useState([]);
   const [modalImage, setModalImage] = useState(null);
   const [rechazoText, setRechazoText] = useState('');
   const [msg, setMsg] = useState('');
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const listSignatureRef = useRef(null);
+  const navigate = useNavigate();
+
+  // Elimina de todas las farmacias las notificaciones de registro de un delivery aceptado/rechazado
+  const removeDeliveryRegistroFromAllFarmacias = async (deliveryUid) => {
+    try {
+      const usersSnap = await get(ref(db, 'users'));
+      const users = usersSnap.val() || {};
+      const updates = {};
+      for (const [uid, u] of Object.entries(users)) {
+        if (u && u.role === 'Farmacia') {
+          const notifsSnap = await get(ref(db, `notificaciones/${uid}`));
+          const notifs = notifsSnap.val() || {};
+          for (const [nid, n] of Object.entries(notifs)) {
+            if (n && (n.tipo === 'delivery_registro' || n.deliveryUid) && n.deliveryUid === deliveryUid) {
+              updates[`notificaciones/${uid}/${nid}`] = null;
+            }
+          }
+        }
+      }
+      if (Object.keys(updates).length > 0) {
+        await update(ref(db), updates);
+      }
+    } catch (e) {
+      console.warn('No se pudieron limpiar notificaciones en todas las farmacias:', e);
+    }
+  };
 
   useEffect(() => {
-    let notUnsub = null;
+    let baseRef = null;
+    let mounted = true;
+
+    const toMs = (v) => {
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string') return Date.parse(v) || 0;
+      return 0;
+    };
+
+    const mapDataToList = (data) => {
+      if (!data) return [];
+      const entries = Object.entries(data).map(([id, n]) => ({ id, ...n }));
+      return entries
+        .filter(n => n.tipo === 'delivery_registro' || (n.deliveryUid && (n.frente || n.reverso)))
+        .sort((a, b) => (toMs(b.fecha) - toMs(a.fecha)));
+    };
+
+    const makeSignature = (list) =>
+      list.map(n => [n.id, n.tipo, n.deliveryUid, n.frente, n.reverso, toMs(n.fecha)].join('|')).join(';');
+
     // Espera a que el auth esté listo
     const authUnsub = onAuthStateChanged(auth, (user) => {
       if (!user) {
         setNotifs([]);
+        listSignatureRef.current = null;
         return;
       }
-      const notRef = ref(db, `notificaciones/${user.uid}`);
-      notUnsub = onValue(notRef, (snapshot) => {
+      baseRef = ref(db, `notificaciones/${user.uid}`);
+      onValue(baseRef, (snapshot) => {
         const data = snapshot.val();
-        if (!data) {
-          setNotifs([]);
-          return;
-        }
-        // Mostrar cualquier notificación de tipo 'delivery_registro' (sin filtrar estrictamente por status)
-        const list = Object.entries(data)
-          .map(([id, n]) => ({ id, ...n }))
-          .filter(n => n.tipo === 'delivery_registro');
+        const list = mapDataToList(data);
         setNotifs(list);
+        listSignatureRef.current = makeSignature(list);
+        if (mounted) setLastUpdated(new Date());
       });
     });
+    // Fallback: refresco cada 2s por si el listener en vivo falla en el entorno
+    const intervalId = setInterval(async () => {
+      try {
+        const uid = auth.currentUser?.uid;
+        if (!uid) return;
+        const snap = await get(ref(db, `notificaciones/${uid}`));
+        const data = snap.val();
+        const list = mapDataToList(data);
+        const sig = makeSignature(list);
+        if (sig !== listSignatureRef.current) {
+          setNotifs(list);
+          listSignatureRef.current = sig;
+        }
+        if (mounted) setLastUpdated(new Date());
+      } catch {}
+    }, 2000);
     return () => {
-      if (typeof notUnsub === 'function') notUnsub();
+      mounted = false;
+      if (baseRef) off(baseRef);
       if (typeof authUnsub === 'function') authUnsub();
+      clearInterval(intervalId);
     };
   }, []);
 
@@ -48,13 +111,16 @@ const RevisionDeliverys = () => {
   const aceptar = async (notif) => {
     try {
       // marcar delivery como aceptado y permitir login (deliveryVerified = true)
-      await update(ref(db, `users/${notif.deliveryUid}`), {
+      const userRef = ref(db, `users/${notif.deliveryUid}`);
+      await update(userRef, {
         deliveryVerified: true,
         deliveryVerification: {
           status: 'accepted',
           message: '',
           fechaRevision: new Date().toISOString(),
-          revisadoPor: auth.currentUser?.uid || null
+          revisadoPor: auth.currentUser?.uid || null,
+          frente: notif.frente || '',
+          reverso: notif.reverso || ''
         }
       });
       // notificar al delivery
@@ -63,6 +129,8 @@ const RevisionDeliverys = () => {
         mensaje: 'Tu registro como delivery fue aceptado por la farmacia.',
         fecha: new Date().toISOString()
       });
+      // limpiar la notificación para todas las farmacias
+      await removeDeliveryRegistroFromAllFarmacias(notif.deliveryUid);
       // eliminar notificación local (la del array) buscando por id
       await remove(ref(db, `notificaciones/${auth.currentUser.uid}/${notif.id}`));
       setMsg('Registro aceptado correctamente');
@@ -79,14 +147,16 @@ const RevisionDeliverys = () => {
       return;
     }
     try {
-      // marcar como rechazado y dejar mensaje; deliveryVerified queda en false
-      await update(ref(db, `users/${notif.deliveryUid}`), {
-        deliveryVerified: false,
+      // Actualizar estado del delivery sin borrar su cuenta para permitir reintento dentro del panel
+      const deliveryRef = ref(db, `users/${notif.deliveryUid}`);
+      await update(deliveryRef, {
         deliveryVerification: {
           status: 'rejected',
           message: rechazoText,
           fechaRevision: new Date().toISOString(),
-          revisadoPor: auth.currentUser?.uid || null
+          revisadoPor: auth.currentUser?.uid || null,
+          frente: notif.frente || '',
+          reverso: notif.reverso || ''
         }
       });
       // notificar al delivery con el motivo
@@ -95,10 +165,12 @@ const RevisionDeliverys = () => {
         mensaje: `Registro rechazado: ${rechazoText}`,
         fecha: new Date().toISOString()
       });
-      // eliminar notificación para la farmacia
+      // limpiar la notificación para todas las farmacias
+      await removeDeliveryRegistroFromAllFarmacias(notif.deliveryUid);
+      // eliminar notificación para la farmacia (ya procesada)
       await remove(ref(db, `notificaciones/${auth.currentUser.uid}/${notif.id}`));
       setRechazoText('');
-      setMsg('Registro rechazado y se notificó al usuario');
+      setMsg('Registro rechazado. El delivery puede reintentar desde su panel.');
       setTimeout(() => setMsg(''), 3000);
     } catch (e) {
       console.error(e);
@@ -107,9 +179,17 @@ const RevisionDeliverys = () => {
   };
 
   return (
-    <div style={{ maxWidth: 900, margin: 'auto', padding: 12 }}>
-      <h2>Revisión de Registros Delivery</h2>
+    <div style={{ maxWidth: '900px', margin: '40px auto', padding: '20px' }}>
+      {!embedded && (
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+          <h2 style={{ margin:0 }}>Revisión de Registros Delivery</h2>
+          <button onClick={() => (typeof onClose === 'function' ? onClose() : navigate(-1))} style={{ padding:'6px 12px', background:'#007bff', color:'#fff', border:'none', borderRadius:4, cursor:'pointer' }}>Volver</button>
+        </div>
+      )}
       {msg && <p style={{ color: msg.includes('No se pudo') ? 'red' : 'green' }}>{msg}</p>}
+      {lastUpdated && (
+        <p style={{ color: '#666', fontSize: 12 }}>Actualizado: {lastUpdated.toLocaleTimeString()}</p>
+      )}
       {notifs.length === 0 ? (
         <p>No hay registros nuevos de delivery para revisar.</p>
       ) : (

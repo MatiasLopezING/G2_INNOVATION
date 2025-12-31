@@ -15,27 +15,33 @@ const Usuario = () => {
   const [farmacias, setFarmacias] = useState([]);
 
   useEffect(() => {
-    // Obtiene el usuario actual y las farmacias abiertas
+    // Suscripción en tiempo real para usuario actual y listado de farmacias
     const user = auth.currentUser;
+    let unsubUser;
+    let unsubFarmacias;
     if (user) {
       const userRef = ref(db, `users/${user.uid}`);
-      onValue(userRef, (snapshot) => {
+      unsubUser = onValue(userRef, (snapshot) => {
         setUsuario(snapshot.val());
-      }, { onlyOnce: true });
+      });
     }
     const farmaciasRef = ref(db, "users");
-    onValue(farmaciasRef, (snapshot) => {
+    unsubFarmacias = onValue(farmaciasRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Solo farmacias abiertas
-        const farmaciasAbiertas = Object.entries(data)
+        // Tomar todas las farmacias (abiertas/cerradas) y dejar que el mapa muestre el estado
+        const todasFarmacias = Object.entries(data)
           .map(([id, u]) => ({ id, ...u }))
-          .filter(u => u.role === "Farmacia" && isFarmaciaAbierta(u.horarios));
-        setFarmacias(farmaciasAbiertas);
+          .filter(u => u.role === "Farmacia");
+        setFarmacias(todasFarmacias);
       } else {
         setFarmacias([]);
       }
-    }, { onlyOnce: true });
+    });
+    return () => {
+      try { if (typeof unsubUser === 'function') unsubUser(); } catch {}
+      try { if (typeof unsubFarmacias === 'function') unsubFarmacias(); } catch {}
+    };
   }, []);
 
   // Estado para mostrar/ocultar secciones
