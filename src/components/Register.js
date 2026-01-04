@@ -14,19 +14,53 @@ import { useNavigate } from 'react-router-dom';
 import HorariosFarmacia from './HorariosFarmacia';
 import { isDniRegistered, isEmailRegisteredInDb } from '../utils/firebaseUtils';
 
-import {
-  Alert,
-  Box,
-  Button,
-  LinearProgress,
-  Paper,
-  Stack,
-  Typography,
-} from '@mui/material';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
+
+import { Button as UiButton } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Alert as UiAlert } from './ui/alert';
+import { Progress } from './ui/progress';
+import { cn } from '../lib/utils';
+import { Badge } from './ui/badge';
+import { Modal } from './ui/modal';
+import { LocationPicker } from './LocationPicker';
+import { FileDropzone } from './FileDropzone';
 
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import LocalPharmacyOutlinedIcon from '@mui/icons-material/LocalPharmacyOutlined';
 import LocalShippingOutlinedIcon from '@mui/icons-material/LocalShippingOutlined';
+import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
+
+const usuarioSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email('Ese correo no parece válido.'),
+    password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres.'),
+    confirmPassword: z.string().min(8, 'Confirma tu contraseña.'),
+    nombre: z.string().trim().min(1, 'Por favor completa tu nombre.'),
+    apellido: z.string().trim().min(1, 'Por favor completa tu apellido.'),
+    dni: z
+      .string()
+      .trim()
+      .regex(/^\d+$/, 'El DNI solo debe tener números.')
+      .min(6, 'El DNI parece tener una longitud incorrecta.')
+      .max(10, 'El DNI parece tener una longitud incorrecta.'),
+    fechaNacimiento: z.string().min(1, 'Selecciona tu fecha de nacimiento.'),
+    obraSocial: z.string().trim().min(1, 'Indica tu obra social.'),
+    nroAfiliado: z.string().trim().min(1, 'Ingresa tu número de afiliado.'),
+    vencimiento: z.string().min(1, 'Selecciona el vencimiento.'),
+    cobertura: z.string().trim().min(1, 'Indica tu cobertura.'),
+    direccion: z.string().trim().min(1, 'Ingresa tu dirección.'),
+    lat: z.number().finite().optional(),
+    lng: z.number().finite().optional(),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'Las contraseñas no coinciden.',
+  });
 
 const Register = () => {
   const [step, setStep] = useState(1);
@@ -39,11 +73,50 @@ const Register = () => {
   // Ayuda contextual por campo
   const [help, setHelp] = useState({});
   const toggleHelp = (key) => setHelp(prev => ({ ...prev, [key]: !prev[key] }));
-  const [isFading, setIsFading] = useState(false);
   const navigate = useNavigate();
 
   const totalSteps = 2;
   const progressValue = useMemo(() => (step / totalSteps) * 100, [step]);
+
+  // Wizard Usuario (4 pasos) con RHF + Zod
+  const [usuarioStep, setUsuarioStep] = useState(1);
+  const usuarioTotalSteps = 4;
+  const usuarioProgressValue = useMemo(
+    () => (usuarioStep / usuarioTotalSteps) * 100,
+    [usuarioStep]
+  );
+
+  const usuarioForm = useForm({
+    resolver: zodResolver(usuarioSchema),
+    mode: 'onTouched',
+    defaultValues: {
+      email: '',
+      password: '',
+      confirmPassword: '',
+      nombre: '',
+      apellido: '',
+      dni: '',
+      fechaNacimiento: '',
+      obraSocial: '',
+      nroAfiliado: '',
+      vencimiento: '',
+      cobertura: '',
+      direccion: '',
+    },
+  });
+
+  const [coordStatusUsuario, setCoordStatusUsuario] = useState(null); // null | 'ok' | 'fail'
+  const [usuarioLocError, setUsuarioLocError] = useState('');
+
+  const usuarioStepFields = useMemo(
+    () => ({
+      1: ['email', 'password', 'confirmPassword'],
+      2: ['nombre', 'apellido', 'dni', 'fechaNacimiento'],
+      3: ['obraSocial', 'nroAfiliado', 'vencimiento', 'cobertura'],
+      4: ['direccion'],
+    }),
+    []
+  );
 
   const roleOptions = useMemo(() => ([
     {
@@ -105,14 +178,12 @@ const Register = () => {
   const [horarios, setHorarios] = useState(null);
 
   // Delivery
+  const [nombreDelivery, setNombreDelivery] = useState('');
+  const [apellidoDelivery, setApellidoDelivery] = useState('');
   const [dniDelivery, setDniDelivery] = useState('');
   const [contactoDelivery, setContactoDelivery] = useState('');
   const [frontImageFile, setFrontImageFile] = useState(null);
   const [backImageFile, setBackImageFile] = useState(null);
-  const [frontPreview, setFrontPreview] = useState(null);
-  const [backPreview, setBackPreview] = useState(null);
-  const [showHelpDelivery, setShowHelpDelivery] = useState(false);
-  const acceptedFormatsText = 'Aceptamos fotos en JPG, JPEG, PNG, WEBP y HEIC. Si subís otro tipo de archivo (ej: PDF) no vas a poder continuar.';
 
   // Validaciones
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -228,8 +299,245 @@ const Register = () => {
       return;
     }
     setError('');
-    setIsFading(true);
-    setTimeout(() => { setStep(2); setIsFading(false); }, 300);
+    setSuccess('');
+    if (role === 'Usuario') setUsuarioStep(1);
+    if (role === 'Farmacia') setFarmaciaStep(1);
+    if (role === 'Distribuidor') setDeliveryStep(1);
+    setStep(2);
+  };
+
+  const handleUsuarioNext = async () => {
+    setError('');
+    setSuccess('');
+
+    const fields = usuarioStepFields[usuarioStep] || [];
+    const ok = await usuarioForm.trigger(fields);
+    if (!ok) return;
+    if (usuarioStep < usuarioTotalSteps) setUsuarioStep((s) => s + 1);
+  };
+
+  const handleUsuarioBack = () => {
+    setError('');
+    setSuccess('');
+    setUsuarioStep((s) => Math.max(1, s - 1));
+  };
+
+  // Delivery wizard (3 pasos)
+  const [deliveryStep, setDeliveryStep] = useState(1);
+  const deliveryTotalSteps = 3;
+  const deliveryProgressValue = useMemo(
+    () => (deliveryStep / deliveryTotalSteps) * 100,
+    [deliveryStep]
+  );
+
+  const handleDeliveryNext = () => {
+    setError('');
+    setSuccess('');
+
+    if (deliveryStep === 1) {
+      const vEmail = validateField('email', email);
+      const vPass = validateField('password', password);
+      if (vEmail || vPass) {
+        setFieldError('email', vEmail);
+        setFieldError('password', vPass);
+        return;
+      }
+      setDeliveryStep(2);
+      return;
+    }
+
+    if (deliveryStep === 2) {
+      const vNombre = validateField('nombre', nombreDelivery);
+      if (vNombre) {
+        setFieldError('nombreDelivery', vNombre);
+        return;
+      }
+      const vApellido = validateField('apellido', apellidoDelivery);
+      if (vApellido) {
+        setFieldError('apellidoDelivery', vApellido);
+        return;
+      }
+
+      const vDni = validateField('dni', dniDelivery);
+      if (vDni) {
+        setFieldError('dniDelivery', vDni);
+        return;
+      }
+
+      const vFn = validateField('fechaNacimiento', fechaNacimiento);
+      if (vFn) {
+        setFieldError('fechaNacimiento', vFn);
+        return;
+      }
+
+      const digits = String(contactoDelivery || '').replace(/\D/g, '');
+      if (!digits) {
+        setFieldError('contactoDelivery', 'Por favor ingresa tu número de celular.');
+        return;
+      }
+      if (digits.length < 7) {
+        setFieldError('contactoDelivery', 'El número de celular parece incompleto.');
+        return;
+      }
+
+      setDeliveryStep(3);
+    }
+  };
+
+  const handleDeliveryBack = () => {
+    setError('');
+    setSuccess('');
+    setDeliveryStep((s) => Math.max(1, s - 1));
+  };
+
+  // Farmacia wizard (3 pasos)
+  const [farmaciaStep, setFarmaciaStep] = useState(1);
+  const farmaciaTotalSteps = 3;
+  const farmaciaProgressValue = useMemo(
+    () => (farmaciaStep / farmaciaTotalSteps) * 100,
+    [farmaciaStep]
+  );
+  const [farmaciaLocError, setFarmaciaLocError] = useState('');
+  const [isHorariosOpen, setIsHorariosOpen] = useState(false);
+
+  const ensureDefaultHorarios = () => {
+    if (horarios) return horarios;
+    const diasSemana = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    const base = { abierto: true, apertura: '08:00', cierre: '20:00' };
+    const obj = diasSemana.reduce((acc, d) => {
+      acc[d] = { ...base };
+      return acc;
+    }, {});
+    setHorarios(obj);
+    return obj;
+  };
+
+  const handleAddObraSocial = () => {
+    const v = String(obraSocialInput || '').trim();
+    if (!v) return;
+    if (obrasSocialesAceptadas.includes(v)) {
+      setObraSocialInput('');
+      return;
+    }
+    setObrasSocialesAceptadas([...obrasSocialesAceptadas, v]);
+    setObraSocialInput('');
+  };
+
+  const handleRemoveObraSocial = (obra) => {
+    setObrasSocialesAceptadas(obrasSocialesAceptadas.filter((o) => o !== obra));
+  };
+
+  const handleFarmaciaNext = () => {
+    setError('');
+    setSuccess('');
+    setFarmaciaLocError('');
+
+    if (farmaciaStep === 1) {
+      if (!String(nombreFarmacia || '').trim()) {
+        setFieldError('nombreFarmacia', 'Nombre de farmacia vacío');
+        return;
+      }
+      const vEmail = validateField('email', email);
+      const vPass = validateField('password', password);
+      if (vEmail || vPass) {
+        setFieldError('email', vEmail);
+        setFieldError('password', vPass);
+        return;
+      }
+      setFarmaciaStep(2);
+      return;
+    }
+
+    if (farmaciaStep === 2) {
+      const vDir = validateField('direccion', direccionFarmacia);
+      if (vDir) {
+        setFieldError('direccionFarmacia', vDir);
+        return;
+      }
+      const latN = Number(latFarmacia);
+      const lngN = Number(lngFarmacia);
+      if (!isFinite(latN) || !isFinite(lngN)) {
+        setCoordStatusFarmacia('fail');
+        setFarmaciaLocError('Obtén las coordenadas para continuar.');
+        return;
+      }
+      if (!String(contactoFarmacia || '').trim()) {
+        setFieldError('contactoFarmacia', 'Por favor ingresa un contacto (teléfono/WhatsApp).');
+        return;
+      }
+      setFarmaciaStep(3);
+    }
+  };
+
+  const handleFarmaciaBack = () => {
+    setError('');
+    setSuccess('');
+    setFarmaciaLocError('');
+    setFarmaciaStep((s) => Math.max(1, s - 1));
+  };
+
+  const handleSubmitFarmacia = async (e) => {
+    e.preventDefault();
+    ensureDefaultHorarios();
+    await handleRegister(e);
+  };
+
+  const handleRegisterUsuario = async (values) => {
+    setError('');
+    setSuccess('');
+
+    // Requerimos coords para finalizar (feedback pro + evita errores de ubicación)
+    const latN = values.lat;
+    const lngN = values.lng;
+    if (!isFinite(latN) || !isFinite(lngN)) {
+      setCoordStatusUsuario('fail');
+      setError('Detecta tu ubicación para finalizar el registro.');
+      setUsuarioStep(4);
+      return;
+    }
+
+    try {
+      const emailExistsInDb = await isEmailRegisteredInDb(values.email);
+      if (emailExistsInDb) {
+        usuarioForm.setError('email', { type: 'manual', message: 'Ese correo ya está en uso actualmente.' });
+        setUsuarioStep(1);
+        return;
+      }
+
+      const dniTaken = await isDniRegistered(values.dni);
+      if (dniTaken) {
+        usuarioForm.setError('dni', { type: 'manual', message: 'Ese DNI ya está registrado.' });
+        setUsuarioStep(2);
+        return;
+      }
+
+      const emailLower = String(values.email).toLowerCase();
+      const userCredential = await createUserWithEmailAndPassword(auth, emailLower, values.password);
+      const user = userCredential.user;
+
+      const userData = {
+        email: emailLower,
+        role: 'Usuario',
+        dni: values.dni,
+        nombre: values.nombre,
+        apellido: values.apellido,
+        fechaNacimiento: values.fechaNacimiento,
+        obraSocial: values.obraSocial,
+        nroAfiliado: values.nroAfiliado,
+        vencimiento: values.vencimiento,
+        cobertura: values.cobertura,
+        direccion: values.direccion,
+        latitud: String(latN),
+        longitud: String(lngN),
+      };
+
+      await set(ref(db, 'users/' + user.uid), userData);
+      setSuccess('Usuario registrado correctamente');
+      setTimeout(() => navigate('/'), 1200);
+    } catch (err) {
+      console.error(err);
+      setError('No pudimos registrar tu cuenta. Revisa los datos e intenta nuevamente.');
+    }
   };
 
   const handleRegister = async (e) => {
@@ -261,6 +569,27 @@ const Register = () => {
         if (dniTaken) { setFieldError(dniFieldName, 'Ese DNI ya está registrado.'); return; }
       }
 
+      if (role === 'Distribuidor') {
+        const vNombre = validateField('nombre', nombreDelivery);
+        if (vNombre) {
+          setFieldError('nombreDelivery', vNombre);
+          return;
+        }
+        const vApellido = validateField('apellido', apellidoDelivery);
+        if (vApellido) {
+          setFieldError('apellidoDelivery', vApellido);
+          return;
+        }
+        if (!frontImageFile) {
+          setFieldError('frontImage', 'Sube la foto del frente del DNI.');
+          return;
+        }
+        if (!backImageFile) {
+          setFieldError('backImage', 'Sube la foto del dorso del DNI.');
+          return;
+        }
+      }
+
       const emailLower = String(email).toLowerCase();
       // Si hay una farmacia logueada y está creando un Distribuidor, usar Cloud Function
       let requesterRole = null;
@@ -282,6 +611,8 @@ const Register = () => {
         await createDistribuidor({
           email: emailLower,
           password,
+          nombre: nombreDelivery,
+          apellido: apellidoDelivery,
           dni: dniDelivery,
           fechaNacimiento,
           contacto: contactoDelivery,
@@ -290,7 +621,7 @@ const Register = () => {
         });
         setSuccess('Delivery registrado y notificado a farmacias.');
         // Limpiar formulario delivery y permanecer en sesión de farmacia
-        setDniDelivery(''); setContactoDelivery(''); setFrontImageFile(null); setBackImageFile(null); setFrontPreview(null); setBackPreview(null);
+        setNombreDelivery(''); setApellidoDelivery(''); setDniDelivery(''); setContactoDelivery(''); setFrontImageFile(null); setBackImageFile(null);
         setEmail(''); setPassword('');
         return;
       }
@@ -337,6 +668,8 @@ const Register = () => {
         }
         userData = {
           ...userData,
+          nombre: String(nombreDelivery || '').trim(),
+          apellido: String(apellidoDelivery || '').trim(),
           dni: dniDelivery,
           fechaNacimiento,
           contacto: contactoDelivery,
@@ -378,472 +711,634 @@ const Register = () => {
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'grid',
-        placeItems: 'center',
-        px: 2,
-        py: 3,
-      }}
-    >
-      <Box sx={{ width: '100%', maxWidth: 520 }}>
-        <Box sx={{ display: 'grid', placeItems: 'center', mb: 1.5 }}>
+    <div className="min-h-screen bg-slate-50/60 flex items-center justify-center py-10 px-4">
+      <div className="w-full max-w-xl">
+        <div className="flex justify-center mb-4">
           <img
             src="/icons/RecetApp.png"
             alt="RecetApp"
-            style={{ width: 84, height: 84, objectFit: 'contain' }}
+            className="h-16 w-16 object-contain"
           />
-        </Box>
+        </div>
 
-        <Paper
-          elevation={10}
-          sx={{
-            width: '100%',
-            p: { xs: 3, sm: 4 },
-            borderRadius: 3,
-            backdropFilter: 'blur(6px)',
-            animation: 'g2-fade-slide-in 520ms ease forwards',
-            '@keyframes g2-fade-slide-in': {
-              from: { opacity: 0, transform: 'translateY(18px)' },
-              to: { opacity: 1, transform: 'translateY(0)' },
-            },
-          }}
-        >
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="caption" color="text.secondary">
-              Paso {step} de {totalSteps}
-            </Typography>
-            <LinearProgress
-              variant="determinate"
-              value={progressValue}
-              sx={{ mt: 0.75, height: 8, borderRadius: 999 }}
-            />
-          </Box>
+        <div className="w-full bg-white/80 backdrop-blur-md border border-slate-100 rounded-xl shadow-sm p-6 sm:p-8">
+          {step === 1 && (
+            <div className="mb-5">
+              <div className="text-xs text-slate-500">
+                Paso {step} de {totalSteps}
+              </div>
+              <Progress value={progressValue} className="mt-2" />
+            </div>
+          )}
 
           {step === 1 && (
-            <Box component="form" onSubmit={handleNext} sx={{ display: 'grid', gap: 2 }}>
-              <Box>
-                <Typography variant="h5" fontWeight={700} align="center">
-                  Crear Cuenta
-                </Typography>
-                <Typography variant="body2" color="text.secondary" align="center">
-                  Selecciona tu tipo de perfil para comenzar
-                </Typography>
-              </Box>
+            <form onSubmit={handleNext} className="space-y-5">
+              <div className="text-center">
+                <h2 className="text-2xl font-extrabold text-slate-900">Crear cuenta</h2>
+                <p className="mt-1 text-sm text-slate-600">Selecciona tu tipo de perfil para comenzar</p>
+              </div>
 
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' },
-                  gap: 1.5,
-                  mt: 1,
-                }}
-              >
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {roleOptions.map((opt) => {
                   const active = role === opt.value;
                   return (
-                    <Button
+                    <button
                       key={opt.value}
                       type="button"
                       onClick={() => {
                         setRole(opt.value);
                         setError('');
+                        setUsuarioStep(1);
+                        setCoordStatusUsuario(null);
+                        usuarioForm.reset();
                       }}
-                      variant="outlined"
-                      sx={{
-                        p: 2,
-                        minHeight: 128,
-                        borderRadius: 3,
-                        alignItems: 'flex-start',
-                        justifyContent: 'flex-start',
-                        textAlign: 'left',
-                        gap: 1,
-                        borderWidth: 2,
-                        borderColor: active ? 'primary.main' : '#e2e8f0',
-                        backgroundColor: active ? 'rgba(20,184,166,0.12)' : 'rgba(255,255,255,0.6)',
-                        color: active ? 'primary.dark' : 'text.secondary',
-                        transition:
-                          'transform 120ms ease, background-color 200ms ease, border-color 200ms ease',
-                        '&:hover': {
-                          transform: 'translateY(-1px)',
-                          borderColor: 'primary.main',
-                          backgroundColor: 'rgba(20,184,166,0.08)',
-                        },
-                      }}
+                      className={cn(
+                        'rounded-xl border-2 p-4 text-left transition',
+                        'hover:-translate-y-0.5 hover:border-teal-500',
+                        active
+                          ? 'border-teal-500 bg-teal-50'
+                          : 'border-slate-200 bg-white'
+                      )}
                     >
-                      <Stack spacing={0.5} sx={{ width: '100%' }}>
-                        <Box sx={{ color: active ? 'primary.main' : 'text.secondary' }}>
-                          {opt.icon}
-                        </Box>
-                        <Typography fontWeight={800} sx={{ color: active ? 'primary.dark' : 'text.primary' }}>
-                          {opt.title}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                          {opt.description}
-                        </Typography>
-                      </Stack>
-                    </Button>
+                      <div className={cn('mb-2', active ? 'text-teal-600' : 'text-slate-500')}>
+                        {opt.icon}
+                      </div>
+                      <div className="font-extrabold text-slate-900">{opt.title}</div>
+                      <div className="mt-1 text-sm text-slate-600">{opt.description}</div>
+                    </button>
                   );
                 })}
-              </Box>
+              </div>
 
-              {error && <Alert severity="error">{error}</Alert>}
+              {error && <UiAlert variant="error">{error}</UiAlert>}
 
-              <Button
-                type="submit"
-                variant="contained"
-                size="large"
-                fullWidth
-                sx={{
-                  py: 1.2,
-                  color: '#fff',
-                  transition: 'transform 120ms ease, background-color 300ms ease',
-                  '&:hover': { transform: 'translateY(-1px)' },
-                }}
-              >
+              <UiButton type="submit" className="w-full" size="lg">
                 Continuar
-              </Button>
+              </UiButton>
 
-              <Button
-                type="button"
-                variant="text"
-                onClick={() => navigate('/')}
-                sx={{
-                  color: 'text.secondary',
-                  textDecoration: 'underline',
-                  textUnderlineOffset: '4px',
-                  '&:hover': { color: 'primary.main' },
-                }}
+              <UiButton type="button" variant="ghost" className="w-full underline underline-offset-4" onClick={() => navigate('/')}
               >
                 Volver al login
-              </Button>
-            </Box>
-          )}
-
-          {step === 2 && (
-            <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '300px', gap: '10px' }}>
-          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label>Email</label>
-            <button type="button" onClick={() => toggleHelp('email')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-          </div>
-          <input type="email" placeholder="Email" value={email} onChange={e => { setEmail(e.target.value); setFieldError('email',''); }} onBlur={e => setFieldError('email', validateField('email', e.target.value))} required style={{ width: '100%' }} />
-          {help.email && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Escribe tu correo como nombre@ejemplo.com en minúsculas. Si no tienes correo, puedes crear uno gratis (por ejemplo, en Gmail).</div>}
-          {errors.email && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.email}</div>}
-          <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label>Contraseña</label>
-            <button type="button" onClick={() => toggleHelp('password')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-          </div>
-          <input type="password" placeholder="Contraseña" value={password} onChange={e => { setPassword(e.target.value); setFieldError('password',''); }} onBlur={e => setFieldError('password', validateField('password', e.target.value))} required style={{ width: '100%' }} />
-          {help.password && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Crea una clave que recuerdes con al menos 8 caracteres. Evita usar datos obvios como tu nombre o DNI.</div>}
-          {errors.password && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.password}</div>}
-
-          {role === 'Usuario' && (
-            <>
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>DNI</label>
-                <button type="button" onClick={() => toggleHelp('dni')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="DNI" value={dni} onChange={e => { setDni(e.target.value); setFieldError('dni',''); }} onBlur={e => setFieldError('dni', validateField('dni', e.target.value))} required style={{ width: '100%' }} />
-              {help.dni && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Ingresa tu número de documento sin puntos ni espacios. Solo números.</div>}
-              {errors.dni && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.dni}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Nombre</label>
-                <button type="button" onClick={() => toggleHelp('nombre')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Nombre" value={nombre} onChange={e => { setNombre(e.target.value); setFieldError('nombre',''); }} onBlur={e => setFieldError('nombre', validateField('nombre', e.target.value))} required style={{ width: '100%' }} />
-              {help.nombre && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Escribe tu primer nombre tal como aparece en tu documento.</div>}
-              {errors.nombre && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.nombre}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Apellido</label>
-                <button type="button" onClick={() => toggleHelp('apellido')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Apellido" value={apellido} onChange={e => { setApellido(e.target.value); setFieldError('apellido',''); }} onBlur={e => setFieldError('apellido', validateField('apellido', e.target.value))} required style={{ width: '100%' }} />
-              {help.apellido && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Escribe tu apellido tal como aparece en tu documento.</div>}
-              {errors.apellido && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.apellido}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Fecha de nacimiento</label>
-                <button type="button" onClick={() => toggleHelp('fechaNacimiento')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="date" placeholder="Fecha de nacimiento" value={fechaNacimiento} onChange={e => { setFechaNacimiento(e.target.value); setFieldError('fechaNacimiento',''); }} onBlur={e => setFieldError('fechaNacimiento', validateField('fechaNacimiento', e.target.value))} required style={{ width: '100%' }} />
-              {help.fechaNacimiento && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Selecciona tu fecha de nacimiento usando el calendario.</div>}
-              {errors.fechaNacimiento && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.fechaNacimiento}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Obra Social</label>
-                <button type="button" onClick={() => toggleHelp('obraSocial')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Obra Social" value={obraSocial} onChange={e => { setObraSocial(e.target.value); setFieldError('obraSocial',''); }} onBlur={e => setFieldError('obraSocial', validateField('obraSocial', e.target.value))} required style={{ width: '100%' }} />
-              {help.obraSocial && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Escribe el nombre de tu obra social (por ejemplo: PAMI, OSDE, etc.).</div>}
-              {errors.obraSocial && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.obraSocial}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Nro. Afiliado</label>
-                <button type="button" onClick={() => toggleHelp('nroAfiliado')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Nro. Afiliado" value={nroAfiliado} onChange={e => { setNroAfiliado(e.target.value); setFieldError('nroAfiliado',''); }} onBlur={e => setFieldError('nroAfiliado', validateField('nroAfiliado', e.target.value))} required style={{ width: '100%' }} />
-              {help.nroAfiliado && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Número que figura en tu credencial de la obra social.</div>}
-              {errors.nroAfiliado && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.nroAfiliado}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Vencimiento</label>
-                <button type="button" onClick={() => toggleHelp('vencimiento')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="date" placeholder="Vencimiento" value={vencimiento} onChange={e => { setVencimiento(e.target.value); setFieldError('vencimiento',''); }} onBlur={e => setFieldError('vencimiento', validateField('vencimiento', e.target.value))} required style={{ width: '100%' }} />
-              {help.vencimiento && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Selecciona la fecha de vencimiento de tu credencial. Debe ser una fecha futura.</div>}
-              {errors.vencimiento && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.vencimiento}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Cobertura</label>
-                <button type="button" onClick={() => toggleHelp('cobertura')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Cobertura" value={cobertura} onChange={e => { setCobertura(e.target.value); setFieldError('cobertura',''); }} onBlur={e => setFieldError('cobertura', validateField('cobertura', e.target.value))} required style={{ width: '100%' }} />
-              {help.cobertura && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Describe qué te cubre tu obra social (por ejemplo: medicamentos, consultas, etc.).</div>}
-              {errors.cobertura && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.cobertura}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Tarjeta</label>
-                <button type="button" onClick={() => toggleHelp('tarjeta')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Número de tarjeta" value={tarjeta} onChange={e => { setTarjeta(e.target.value); setFieldError('tarjeta',''); }} onBlur={e => setFieldError('tarjeta', validateField('tarjeta', e.target.value))} required style={{ width: '100%' }} />
-              {help.tarjeta && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Ingresa los números de tu tarjeta (sin espacios ni guiones) para poder procesar pagos.</div>}
-              {errors.tarjeta && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.tarjeta}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Código (CVV)</label>
-                <button type="button" onClick={() => toggleHelp('codigoTarjeta')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Código (CVV)" value={codigoTarjeta} onChange={e => { setCodigoTarjeta(e.target.value); setFieldError('codigoTarjeta',''); }} onBlur={e => setFieldError('codigoTarjeta', validateField('codigoTarjeta', e.target.value))} required style={{ width: '100%' }} />
-              {/* CVV ahora obligatorio */}
-              {/* Nota: No se recomienda almacenar CVV en base de datos. Solo validar y enviar a un gateway de pago seguro. */}
-              
-              {help.codigoTarjeta && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>El CVV es el número de 3 o 4 dígitos de seguridad de tu tarjeta.</div>}
-              {errors.codigoTarjeta && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.codigoTarjeta}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Dirección</label>
-                <button type="button" onClick={() => toggleHelp('direccion')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Dirección completa" value={direccion} onChange={e => { setDireccion(e.target.value); setFieldError('direccion',''); }} onBlur={e => setFieldError('direccion', validateField('direccion', e.target.value))} required style={{ width: '100%' }} />
-              {help.direccion && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Escribe calle y número, por ejemplo: "Av. Siempre Viva 742, Ciudad, Provincia".</div>}
-              {errors.direccion && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.direccion}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: '#333' }}>Coordenadas</span>
-                <button type="button" onClick={() => toggleHelp('coordsInfo')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              {help.coordsInfo && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Después de escribir tu dirección, presiona el botón para buscar tu ubicación aproximada (latitud y longitud). Si no aparece, revisa la dirección.</div>}
-
-              <button type="button" style={{ marginBottom: '10px', width: '100%', padding: '8px' }}
-                onClick={async () => {
-                  setCoordStatus(null);
-                  if (!direccion) return;
-                  try {
-                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccion)}`);
-                    const data = await response.json();
-                    if (data && data.length > 0) {
-                      setLat(data[0].lat);
-                      setLng(data[0].lon);
-                      setCoordStatus('ok');
-                      setFieldError('coords','');
-                    } else {
-                      setLat(''); setLng(''); setCoordStatus('fail'); setFieldError('coords','Coordenadas no encontradas');
-                    }
-                  } catch {
-                    setLat(''); setLng(''); setCoordStatus('fail');
-                  }
-                }}
-              >Obtener latitud y longitud</button>
-              <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {coordStatus === 'ok' && (<span style={{ color: 'green', fontSize: '1.5em' }}>✔️</span>)}
-                {coordStatus === 'fail' && (<span style={{ color: 'red', fontSize: '1.5em' }}>❌</span>)}
-                {coordStatus === 'fail' && (<span>No se encontró la dirección.</span>)}
-              </div>
-            </>
-          )}
-
-          {role === 'Farmacia' && (
-            <>
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Nombre de la farmacia</label>
-                <button type="button" onClick={() => toggleHelp('nombreFarmacia')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Nombre de la farmacia" value={nombreFarmacia} onChange={e => { setNombreFarmacia(e.target.value); setFieldError('nombreFarmacia',''); }} onBlur={e => setFieldError('nombreFarmacia', e.target.value ? '' : 'Nombre de farmacia vacío')} required style={{ width: '100%' }} />
-              {help.nombreFarmacia && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Escribe el nombre comercial tal como lo ven los clientes.</div>}
-              {errors.nombreFarmacia && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.nombreFarmacia}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Dirección completa</label>
-                <button type="button" onClick={() => toggleHelp('direccionFarmacia')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Dirección completa" value={direccionFarmacia} onChange={e => { setDireccionFarmacia(e.target.value); setFieldError('direccionFarmacia',''); }} onBlur={e => setFieldError('direccionFarmacia', validateField('direccion', e.target.value))} required style={{ width: '100%' }} />
-              {help.direccionFarmacia && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Escribe la dirección exacta (calle, número, ciudad). Luego usa el botón para obtener la ubicación.</div>}
-              {errors.direccionFarmacia && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.direccionFarmacia}</div>}
-
-              <button type="button" style={{ marginBottom: '10px', width: '100%', padding: '8px' }}
-                onClick={async () => {
-                  setCoordStatusFarmacia(null);
-                  if (!direccionFarmacia) return;
-                  try {
-                    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(direccionFarmacia)}`);
-                    const data = await response.json();
-                    if (data && data.length > 0) {
-                      setLatFarmacia(data[0].lat);
-                      setLngFarmacia(data[0].lon);
-                      setCoordStatusFarmacia('ok');
-                    } else {
-                      setLatFarmacia(''); setLngFarmacia(''); setCoordStatusFarmacia('fail');
-                    }
-                  } catch {
-                    setLatFarmacia(''); setLngFarmacia(''); setCoordStatusFarmacia('fail');
-                  }
-                }}
-              >Obtener latitud y longitud</button>
-              <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {coordStatusFarmacia === 'ok' && (<span style={{ color: 'green', fontSize: '1.5em' }}>✔️</span>)}
-                {coordStatusFarmacia === 'fail' && (<span style={{ color: 'red', fontSize: '1.5em' }}>❌</span>)}
-                {coordStatusFarmacia === 'fail' && (<span>No se encontró la dirección.</span>)}
-              </div>
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Contacto</label>
-                <button type="button" onClick={() => toggleHelp('contactoFarmacia')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Contacto" value={contactoFarmacia} onChange={e => setContactoFarmacia(e.target.value)} required style={{ width: '100%' }} />
-              {help.contactoFarmacia && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Teléfono o WhatsApp de la farmacia para consultas o pedidos.</div>}
-
-              <div style={{ width: '100%' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label>Obras sociales aceptadas</label>
-                  <button type="button" onClick={() => toggleHelp('obrasSocialesAceptadas')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-                </div>
-                {help.obrasSocialesAceptadas && <div style={{ width: '100%', fontSize: 13, color: '#333', marginBottom: 8 }}>Escribe una obra social y presiona "Agregar". Para quitar alguna, usa la X roja.</div>}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                  <input type="text" placeholder="Agregar obra social" value={obraSocialInput} onChange={e => setObraSocialInput(e.target.value)} style={{ flex: 1 }} />
-                  <button type="button" onClick={() => {
-                    if (obraSocialInput.trim() && !obrasSocialesAceptadas.includes(obraSocialInput.trim())) {
-                      setObrasSocialesAceptadas([...obrasSocialesAceptadas, obraSocialInput.trim()]);
-                      setObraSocialInput('');
-                    }
-                  }} style={{ padding: '8px' }}>Agregar</button>
-                </div>
-                <ul style={{ paddingLeft: '20px', marginBottom: '8px' }}>
-                  {obrasSocialesAceptadas.map((obra, idx) => (
-                    <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {obra}
-                      <button type="button" style={{ color: 'red', border: 'none', background: 'none', cursor: 'pointer' }} onClick={() => {
-                        setObrasSocialesAceptadas(obrasSocialesAceptadas.filter((_, i) => i !== idx));
-                      }}>✖</button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                <label>Horarios</label>
-                <button type="button" onClick={() => toggleHelp('horariosFarmacia')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              {help.horariosFarmacia && <div style={{ width: '100%', fontSize: 13, color: '#333', marginBottom: 8 }}>Completa apertura y cierre por cada día (ej.: 09:00 a 20:00). Si está cerrado un día, indícalo.</div>}
-              <HorariosFarmacia horarios={horarios} setHorarios={setHorarios} />
-            </>
-          )}
-
-          {role === 'Distribuidor' && (
-            <>
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>DNI</label>
-                <button type="button" onClick={() => toggleHelp('dniDelivery')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="DNI" value={dniDelivery} onChange={e => { setDniDelivery(e.target.value); setFieldError('dniDelivery',''); }} onBlur={e => setFieldError('dniDelivery', validateField('dni', e.target.value))} required style={{ width: '100%' }} />
-              {help.dniDelivery && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Tu número de documento sin puntos ni espacios.</div>}
-              {errors.dniDelivery && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.dniDelivery}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Fecha de nacimiento</label>
-                <button type="button" onClick={() => toggleHelp('fechaNacimientoDist')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="date" placeholder="Fecha de nacimiento" value={fechaNacimiento} onChange={e => { setFechaNacimiento(e.target.value); setFieldError('fechaNacimiento',''); }} onBlur={e => setFieldError('fechaNacimiento', validateField('fechaNacimiento', e.target.value))} required style={{ width: '100%' }} />
-              {help.fechaNacimientoDist && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Selecciona tu fecha de nacimiento usando el calendario.</div>}
-              {errors.fechaNacimiento && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.fechaNacimiento}</div>}
-
-              <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>Datos de contacto</label>
-                <button type="button" onClick={() => toggleHelp('contactoDelivery')} style={{ background: '#e9f1ff', border: '1px solid #b6cffb', borderRadius: 14, width: 28, height: 28, cursor: 'pointer' }}>?</button>
-              </div>
-              <input type="text" placeholder="Datos de contacto" value={contactoDelivery} onChange={e => setContactoDelivery(e.target.value)} required style={{ width: '100%' }} />
-              {help.contactoDelivery && <div style={{ width: '100%', fontSize: 13, color: '#333' }}>Tu teléfono o WhatsApp para coordinar entregas.</div>}
-
-              {/* Subida de imágenes frente / reverso (validación básica de tipo) */}
-              <div style={{ width: '100%', marginTop: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <label>Imagen del frente del documento</label>
-                  <button type="button" onClick={() => setShowHelpDelivery(s => !s)} style={{ padding: '4px 8px' }}>?</button>
-                </div>
-                <input type="file" accept="image/*" onChange={e => {
-                  const f = e.target.files && e.target.files[0];
-                  if (f) {
-                    const name = String(f.name || '').toLowerCase();
-                    const isImageByType = f.type && f.type.startsWith('image/');
-                    const isImageByExt = name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.webp') || name.endsWith('.heic') || name.endsWith('.heif');
-                    if (isImageByType || isImageByExt) {
-                      setFrontImageFile(f);
-                      setFrontPreview(URL.createObjectURL(f));
-                      setFieldError('frontImage','');
-                    } else {
-                      setFrontImageFile(null);
-                      setFrontPreview(null);
-                      setFieldError('frontImage','Lo que estás cargando no parece una foto. Por favor subí una foto en JPG o PNG.');
-                    }
-                  }
-                }} />
-                {showHelpDelivery && (<div style={{ background: '#f9f9f9', padding: 8, borderRadius: 6, marginTop: 8 }}>{acceptedFormatsText}</div>)}
-                {errors.frontImage && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.frontImage}</div>}
-                {frontPreview && <img src={frontPreview} alt="Frente" style={{ width: '120px', height: 'auto', marginTop: 8, borderRadius: 6, objectFit: 'cover' }} />}
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
-                  <label>Imagen del reverso del documento</label>
-                  <button type="button" onClick={() => setShowHelpDelivery(s => !s)} style={{ padding: '4px 8px' }}>?</button>
-                </div>
-                <input type="file" accept="image/*" onChange={e => {
-                  const f = e.target.files && e.target.files[0];
-                  if (f) {
-                    const name = String(f.name || '').toLowerCase();
-                    const isImageByType = f.type && f.type.startsWith('image/');
-                    const isImageByExt = name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.webp') || name.endsWith('.heic') || name.endsWith('.heif');
-                    if (isImageByType || isImageByExt) {
-                      setBackImageFile(f);
-                      setBackPreview(URL.createObjectURL(f));
-                      setFieldError('backImage','');
-                    } else {
-                      setBackImageFile(null);
-                      setBackPreview(null);
-                      setFieldError('backImage','Lo que estás cargando no parece una foto. Por favor subí una foto en JPG o PNG.');
-                    }
-                  }
-                }} />
-                {errors.backImage && <div style={{ color: 'red', width: '100%', textAlign: 'left' }}>{errors.backImage}</div>}
-                {backPreview && <img src={backPreview} alt="Reverso" style={{ width: '120px', height: 'auto', marginTop: 8, borderRadius: 6, objectFit: 'cover' }} />}
-              </div>
-            </>
-          )}
-
-          <button type="submit" style={{ width: '100%' }}>Registrar</button>
-          <button
-            type="button"
-            onClick={() => { setStep(1); setError(''); setSuccess(''); }}
-            style={{ width: '100%', background: '#f3f3f3', color: '#333', border: '1px solid #ddd', padding: '8px', borderRadius: 6 }}
-          >
-            Volver a elegir rol
-          </button>
-          {error && <p style={{ color: 'red', textAlign: 'center' }}>{error}</p>}
-          {success && <p style={{ color: 'green', textAlign: 'center' }}>{success}</p>}
+              </UiButton>
             </form>
           )}
-        </Paper>
-      </Box>
-    </Box>
+
+          {step === 2 && role === 'Usuario' && (
+            <form
+              onSubmit={usuarioForm.handleSubmit(handleRegisterUsuario)}
+              className="space-y-6"
+            >
+              <div className="text-center">
+                <h2 className="text-2xl font-extrabold text-slate-900">Crea tu cuenta</h2>
+                <p className="mt-1 text-sm text-slate-600">Paso {usuarioStep} de {usuarioTotalSteps}</p>
+              </div>
+
+              <Progress value={usuarioProgressValue} />
+
+              {error && <UiAlert variant="error">{error}</UiAlert>}
+              {success && <UiAlert variant="success">{success}</UiAlert>}
+
+              {/* Paso 1: Credenciales */}
+              {usuarioStep === 1 && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="u_email">Email</Label>
+                    <Input
+                      id="u_email"
+                      type="email"
+                      placeholder="nombre@ejemplo.com"
+                      {...usuarioForm.register('email')}
+                    />
+                    {usuarioForm.formState.errors.email?.message && (
+                      <div className="text-sm text-red-600">{usuarioForm.formState.errors.email.message}</div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="u_password">Contraseña</Label>
+                    <Input id="u_password" type="password" {...usuarioForm.register('password')} />
+                    {usuarioForm.formState.errors.password?.message && (
+                      <div className="text-sm text-red-600">{usuarioForm.formState.errors.password.message}</div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="u_confirm">Confirmar contraseña</Label>
+                    <Input id="u_confirm" type="password" {...usuarioForm.register('confirmPassword')} />
+                    {usuarioForm.formState.errors.confirmPassword?.message && (
+                      <div className="text-sm text-red-600">{usuarioForm.formState.errors.confirmPassword.message}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Paso 2: Identidad */}
+              {usuarioStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="u_nombre">Nombre</Label>
+                      <Input id="u_nombre" {...usuarioForm.register('nombre')} />
+                      {usuarioForm.formState.errors.nombre?.message && (
+                        <div className="text-sm text-red-600">{usuarioForm.formState.errors.nombre.message}</div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="u_apellido">Apellido</Label>
+                      <Input id="u_apellido" {...usuarioForm.register('apellido')} />
+                      {usuarioForm.formState.errors.apellido?.message && (
+                        <div className="text-sm text-red-600">{usuarioForm.formState.errors.apellido.message}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="u_dni">DNI</Label>
+                      <Input id="u_dni" inputMode="numeric" {...usuarioForm.register('dni')} />
+                      {usuarioForm.formState.errors.dni?.message && (
+                        <div className="text-sm text-red-600">{usuarioForm.formState.errors.dni.message}</div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="u_fn">Fecha de nacimiento</Label>
+                      <Input id="u_fn" type="date" {...usuarioForm.register('fechaNacimiento')} />
+                      {usuarioForm.formState.errors.fechaNacimiento?.message && (
+                        <div className="text-sm text-red-600">{usuarioForm.formState.errors.fechaNacimiento.message}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Paso 3: Cobertura */}
+              {usuarioStep === 3 && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="u_os">Obra social</Label>
+                    <Input id="u_os" {...usuarioForm.register('obraSocial')} />
+                    {usuarioForm.formState.errors.obraSocial?.message && (
+                      <div className="text-sm text-red-600">{usuarioForm.formState.errors.obraSocial.message}</div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="u_af">Nro. afiliado</Label>
+                      <Input id="u_af" {...usuarioForm.register('nroAfiliado')} />
+                      {usuarioForm.formState.errors.nroAfiliado?.message && (
+                        <div className="text-sm text-red-600">{usuarioForm.formState.errors.nroAfiliado.message}</div>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="u_ven">Vencimiento</Label>
+                      <Input id="u_ven" type="date" {...usuarioForm.register('vencimiento')} />
+                      {usuarioForm.formState.errors.vencimiento?.message && (
+                        <div className="text-sm text-red-600">{usuarioForm.formState.errors.vencimiento.message}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="u_cob">Cobertura</Label>
+                    <Input id="u_cob" {...usuarioForm.register('cobertura')} />
+                    {usuarioForm.formState.errors.cobertura?.message && (
+                      <div className="text-sm text-red-600">{usuarioForm.formState.errors.cobertura.message}</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Paso 4: Ubicación */}
+              {usuarioStep === 4 && (
+                <div className="space-y-4">
+                  <LocationPicker
+                    idPrefix="u"
+                    addressPlaceholder="Calle Falsa 123, La Plata"
+                    addressValue={usuarioForm.watch('direccion')}
+                    onAddressChange={(v) => usuarioForm.setValue('direccion', v, { shouldDirty: true })}
+                    latValue={usuarioForm.watch('lat')}
+                    lngValue={usuarioForm.watch('lng')}
+                    onCoordsChange={(latN, lngN) => {
+                      usuarioForm.setValue('lat', latN, { shouldDirty: true });
+                      usuarioForm.setValue('lng', lngN, { shouldDirty: true });
+                    }}
+                    coordStatus={coordStatusUsuario}
+                    onCoordStatusChange={setCoordStatusUsuario}
+                    onError={(msg) => {
+                      setUsuarioLocError(msg || '');
+                      if (msg) setError(msg);
+                    }}
+                  />
+                  {usuarioLocError && !error && (
+                    <div className="text-sm text-red-600">{usuarioLocError}</div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <UiButton
+                  type="button"
+                  variant="ghost"
+                  onClick={usuarioStep === 1 ? () => { setStep(1); setError(''); setSuccess(''); } : handleUsuarioBack}
+                >
+                  ← Volver
+                </UiButton>
+
+                {usuarioStep < usuarioTotalSteps ? (
+                  <UiButton type="button" onClick={handleUsuarioNext}>
+                    Siguiente
+                  </UiButton>
+                ) : (
+                  <UiButton type="submit">Finalizar</UiButton>
+                )}
+              </div>
+            </form>
+          )}
+
+          {step === 2 && role === 'Farmacia' && (
+            <form onSubmit={handleSubmitFarmacia} className="space-y-6">
+              <div className="text-center">
+                <h2 className="text-2xl font-extrabold text-slate-900">Registra tu Farmacia</h2>
+                <p className="mt-1 text-sm text-slate-600">Paso {farmaciaStep} de {farmaciaTotalSteps}</p>
+              </div>
+
+              <Progress value={farmaciaProgressValue} />
+
+              {error && <UiAlert variant="error">{error}</UiAlert>}
+              {success && <UiAlert variant="success">{success}</UiAlert>}
+
+              {farmaciaStep === 1 && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="f_nombre">Nombre de la farmacia</Label>
+                    <Input
+                      id="f_nombre"
+                      value={nombreFarmacia}
+                      onChange={(e) => {
+                        setNombreFarmacia(e.target.value);
+                        setFieldError('nombreFarmacia', '');
+                      }}
+                      onBlur={(e) => setFieldError('nombreFarmacia', e.target.value ? '' : 'Nombre de farmacia vacío')}
+                      placeholder="Farmacia Central"
+                    />
+                    {errors.nombreFarmacia && <div className="text-sm text-red-600">{errors.nombreFarmacia}</div>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="f_email">Email</Label>
+                    <Input
+                      id="f_email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setFieldError('email', '');
+                      }}
+                      onBlur={(e) => setFieldError('email', validateField('email', e.target.value))}
+                      placeholder="farmacia@ejemplo.com"
+                    />
+                    {errors.email && <div className="text-sm text-red-600">{errors.email}</div>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="f_pass">Contraseña</Label>
+                    <Input
+                      id="f_pass"
+                      type="password"
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setFieldError('password', '');
+                      }}
+                      onBlur={(e) => setFieldError('password', validateField('password', e.target.value))}
+                    />
+                    {errors.password && <div className="text-sm text-red-600">{errors.password}</div>}
+                  </div>
+                </div>
+              )}
+
+              {farmaciaStep === 2 && (
+                <div className="space-y-4">
+                  <LocationPicker
+                    idPrefix="f"
+                    addressLabel="Dirección"
+                    addressPlaceholder="Av. Siempre Viva 742, Ciudad"
+                    addressValue={direccionFarmacia}
+                    onAddressChange={(v) => {
+                      setDireccionFarmacia(v);
+                      setFieldError('direccionFarmacia', '');
+                    }}
+                    latValue={latFarmacia}
+                    lngValue={lngFarmacia}
+                    onCoordsChange={(latN, lngN) => {
+                      setLatFarmacia(String(latN));
+                      setLngFarmacia(String(lngN));
+                    }}
+                    coordStatus={coordStatusFarmacia}
+                    onCoordStatusChange={setCoordStatusFarmacia}
+                    onError={(msg) => {
+                      setFarmaciaLocError(msg || '');
+                      if (msg) setError(msg);
+                    }}
+                  />
+                  {errors.direccionFarmacia && <div className="text-sm text-red-600">{errors.direccionFarmacia}</div>}
+                  {farmaciaLocError && !error && <div className="text-sm text-red-600">{farmaciaLocError}</div>}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="f_contacto">Teléfono / WhatsApp</Label>
+                    <Input
+                      id="f_contacto"
+                      value={contactoFarmacia}
+                      onChange={(e) => {
+                        setContactoFarmacia(e.target.value);
+                        setFieldError('contactoFarmacia', '');
+                      }}
+                      placeholder="Ej: +54 221 555-1234"
+                    />
+                    {errors.contactoFarmacia && <div className="text-sm text-red-600">{errors.contactoFarmacia}</div>}
+                  </div>
+                </div>
+              )}
+
+              {farmaciaStep === 3 && (
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label>Obras sociales aceptadas</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={obraSocialInput}
+                        onChange={(e) => setObraSocialInput(e.target.value)}
+                        placeholder="Escribe una obra social (ej: IOMA)"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddObraSocial();
+                          }
+                        }}
+                      />
+                      <UiButton
+                        type="button"
+                        variant="outline"
+                        onClick={handleAddObraSocial}
+                        aria-label="Agregar obra social"
+                      >
+                        <AddIcon fontSize="small" />
+                      </UiButton>
+                    </div>
+
+                    {obrasSocialesAceptadas.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        {obrasSocialesAceptadas.map((obra) => (
+                          <Badge key={obra} className="bg-white">
+                            {obra}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveObraSocial(obra)}
+                              className="ml-1 text-slate-500 hover:text-slate-900"
+                              aria-label={`Quitar ${obra}`}
+                            >
+                              <CloseIcon fontSize="inherit" />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Horarios</Label>
+                    <div className="rounded-md border border-slate-200 bg-slate-50 p-3 flex items-center justify-between gap-3">
+                      <div className="text-sm text-slate-600">
+                        Configura los horarios de atención.
+                      </div>
+                      <UiButton type="button" variant="outline" size="sm" onClick={() => setIsHorariosOpen(true)}>
+                        Editar
+                      </UiButton>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <UiButton
+                  type="button"
+                  variant="ghost"
+                  onClick={farmaciaStep === 1 ? () => { setStep(1); setError(''); setSuccess(''); } : handleFarmaciaBack}
+                >
+                  ← Volver al inicio
+                </UiButton>
+
+                {farmaciaStep < farmaciaTotalSteps ? (
+                  <UiButton type="button" onClick={handleFarmaciaNext}>
+                    Siguiente
+                  </UiButton>
+                ) : (
+                  <UiButton type="submit">Registrar</UiButton>
+                )}
+              </div>
+
+              <Modal open={isHorariosOpen} title="Editar horarios" onClose={() => setIsHorariosOpen(false)}>
+                <HorariosFarmacia horarios={horarios} setHorarios={setHorarios} embedded defaultOpen />
+              </Modal>
+            </form>
+          )}
+
+          {step === 2 && role === 'Distribuidor' && (
+            <form onSubmit={handleRegister} className="space-y-6">
+              <div>
+                <h2 className="text-xl sm:text-2xl font-semibold text-slate-900">Registro de Delivery</h2>
+                <p className="mt-1 text-sm text-slate-600">Completa tus datos para habilitarte.</p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm text-slate-600">Paso {deliveryStep} de {deliveryTotalSteps}</p>
+                <Progress value={deliveryProgressValue} />
+              </div>
+
+              {deliveryStep === 1 && (
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="d_email">Email</Label>
+                    <Input
+                      id="d_email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setFieldError('email', '');
+                      }}
+                      onBlur={(e) => setFieldError('email', validateField('email', e.target.value))}
+                      placeholder="delivery@ejemplo.com"
+                    />
+                    {errors.email && <div className="text-sm text-red-600">{errors.email}</div>}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="d_pass">Contraseña</Label>
+                    <Input
+                      id="d_pass"
+                      type="password"
+                      value={password}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        setFieldError('password', '');
+                      }}
+                      onBlur={(e) => setFieldError('password', validateField('password', e.target.value))}
+                    />
+                    {errors.password && <div className="text-sm text-red-600">{errors.password}</div>}
+                  </div>
+                </div>
+              )}
+
+              {deliveryStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="d_nombre">Nombre</Label>
+                      <Input
+                        id="d_nombre"
+                        value={nombreDelivery}
+                        onChange={(e) => {
+                          setNombreDelivery(e.target.value);
+                          setFieldError('nombreDelivery', '');
+                        }}
+                        placeholder="Tu nombre"
+                      />
+                      {errors.nombreDelivery && <div className="text-sm text-red-600">{errors.nombreDelivery}</div>}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="d_apellido">Apellido</Label>
+                      <Input
+                        id="d_apellido"
+                        value={apellidoDelivery}
+                        onChange={(e) => {
+                          setApellidoDelivery(e.target.value);
+                          setFieldError('apellidoDelivery', '');
+                        }}
+                        placeholder="Tu apellido"
+                      />
+                      {errors.apellidoDelivery && <div className="text-sm text-red-600">{errors.apellidoDelivery}</div>}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="d_fn">Fecha de nacimiento</Label>
+                      <Input
+                        id="d_fn"
+                        type="date"
+                        value={fechaNacimiento}
+                        onChange={(e) => {
+                          setFechaNacimiento(e.target.value);
+                          setFieldError('fechaNacimiento', '');
+                        }}
+                        onBlur={(e) => setFieldError('fechaNacimiento', validateField('fechaNacimiento', e.target.value))}
+                      />
+                      {errors.fechaNacimiento && <div className="text-sm text-red-600">{errors.fechaNacimiento}</div>}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="d_cel">Número de celular</Label>
+                      <Input
+                        id="d_cel"
+                        value={contactoDelivery}
+                        onChange={(e) => {
+                          setContactoDelivery(e.target.value);
+                          setFieldError('contactoDelivery', '');
+                        }}
+                        inputMode="tel"
+                        placeholder="Ej: +54 11 5555-1234"
+                      />
+                      {errors.contactoDelivery && (
+                        <div className="text-sm text-red-600">{errors.contactoDelivery}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="d_dni">DNI</Label>
+                    <Input
+                      id="d_dni"
+                      value={dniDelivery}
+                      onChange={(e) => {
+                        setDniDelivery(e.target.value);
+                        setFieldError('dniDelivery', '');
+                      }}
+                      onBlur={(e) => setFieldError('dniDelivery', validateField('dni', e.target.value))}
+                      placeholder="Ej: 40123456"
+                    />
+                    {errors.dniDelivery && <div className="text-sm text-red-600">{errors.dniDelivery}</div>}
+                  </div>
+                </div>
+              )}
+
+              {deliveryStep === 3 && (
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-lg font-semibold text-slate-900">Verifica tu identidad</div>
+                    <div className="mt-1 text-sm text-slate-600">Necesitamos una foto de tu DNI para habilitarte.</div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FileDropzone
+                      id="dni_frente"
+                      title="DNI frente"
+                      value={frontImageFile}
+                      error={errors.frontImage || ''}
+                      onChange={(file, msg) => {
+                        setFrontImageFile(file);
+                        setFieldError('frontImage', msg || '');
+                      }}
+                    />
+                    <FileDropzone
+                      id="dni_dorso"
+                      title="DNI dorso"
+                      value={backImageFile}
+                      error={errors.backImage || ''}
+                      onChange={(file, msg) => {
+                        setBackImageFile(file);
+                        setFieldError('backImage', msg || '');
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-2">
+                <UiButton
+                  type="button"
+                  variant="ghost"
+                  onClick={deliveryStep === 1 ? () => { setStep(1); setError(''); setSuccess(''); } : handleDeliveryBack}
+                >
+                  ← Volver
+                </UiButton>
+
+                {deliveryStep < deliveryTotalSteps ? (
+                  <UiButton type="button" onClick={handleDeliveryNext}>
+                    Siguiente
+                  </UiButton>
+                ) : (
+                  <UiButton
+                    type="submit"
+                    onClick={() => {
+                      if (!frontImageFile) setFieldError('frontImage', 'Sube la foto del frente del DNI.');
+                      if (!backImageFile) setFieldError('backImage', 'Sube la foto del dorso del DNI.');
+                    }}
+                  >
+                    Finalizar registro
+                  </UiButton>
+                )}
+              </div>
+
+              {error && <UiAlert variant="destructive">{error}</UiAlert>}
+              {success && <UiAlert variant="success">{success}</UiAlert>}
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 

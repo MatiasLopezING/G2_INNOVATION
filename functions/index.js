@@ -50,7 +50,7 @@ exports.deleteUserByUid = functions.https.onCall(async (data, context) => {
 
 // Callable: Farmacia crea un usuario Distribuidor sin perder su sesión.
 // Requiere que quien llama tenga rol 'Farmacia' o 'Admin'.
-// data: { email, password, dni, fechaNacimiento, contacto, frente, reverso }
+// data: { email, password, nombre?, apellido?, dni, fechaNacimiento, contacto, frente, reverso }
 exports.farmaciaCreateDistribuidor = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Debes iniciar sesión.');
@@ -72,6 +72,8 @@ exports.farmaciaCreateDistribuidor = functions.https.onCall(async (data, context
 
   const email = (data?.email || '').toString().trim().toLowerCase();
   const password = (data?.password || '').toString();
+  const nombre = (data?.nombre || '').toString().trim();
+  const apellido = (data?.apellido || '').toString().trim();
   const dni = (data?.dni || '').toString().trim();
   const fechaNacimiento = (data?.fechaNacimiento || '').toString();
   const contacto = (data?.contacto || '').toString();
@@ -91,6 +93,8 @@ exports.farmaciaCreateDistribuidor = functions.https.onCall(async (data, context
     const userData = {
       email,
       role: 'Distribuidor',
+      nombre,
+      apellido,
       dni,
       fechaNacimiento,
       contacto,
