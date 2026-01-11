@@ -6,8 +6,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ref, onValue, update, push, remove, off, get } from 'firebase/database';
-import { db, auth, functions } from '../firebase';
-import { httpsCallable } from 'firebase/functions';
+import { db, auth } from '../firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 const RevisionDeliverys = ({ onClose, embedded = false }) => {

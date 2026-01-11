@@ -4,17 +4,13 @@
  *
  * No recibe props. Utiliza componentes internos para la lógica principal.
  */
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import FarmaciaProductos from './FarmaciaProductos';
 import FarmaciaVentas from './FarmaciaVentas';
-import RevisionRecetas from './RevisionRecetas';
-import RevisionDeliverys from './RevisionDeliverys';
 import Header from './Header';
 
 const Farmacia = () => {
-  const [mostrarRecetas, setMostrarRecetas] = useState(false);
-  const [mostrarRevisionDeliverys, setMostrarRevisionDeliverys] = useState(false);
   const navigate = useNavigate();
 
   return (

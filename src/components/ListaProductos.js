@@ -10,12 +10,20 @@ import { ref, onValue, push, update } from "firebase/database";
 import { db, auth } from "../firebase";
 import Carrito from "./Carrito";
 import UploadRecetaSimple from "./UploadRecetaSimple";
-import { isFarmaciaAbierta, getEstadoFarmacia } from '../utils/horariosUtils';
+import { getEstadoFarmacia } from '../utils/horariosUtils';
+import { Input } from './ui/input';
+import { Button as UiButton } from './ui/button';
+import { Badge } from './ui/badge';
+import { Alert as UiAlert } from './ui/alert';
+import { cn } from '../lib/utils';
 
 // Componente principal para mostrar y gestionar productos disponibles
-const ListaProductos = ({ mostrarCarrito = true }) => {
-  // Estado: compras pendientes por producto
-  const [comprasPendientes, setComprasPendientes] = useState({});
+const ListaProductos = ({
+  mostrarCarrito = true,
+  highlightedFarmaciaId = null,
+  onHoverFarmaciaId,
+  onCartCountChange,
+}) => {
   // Estado: lista de productos disponibles
   const [productos, setProductos] = useState([]);
   // Estado: filtro de búsqueda por nombre
@@ -39,23 +47,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   const [farmacias, setFarmacias] = useState([]);
 
   useEffect(() => {
-    // 1. Consultar todas las compras en estado 'enviando' para cada producto
-    const comprasRef = ref(db, "compras");
-    onValue(comprasRef, (snapshot) => {
-      const data = snapshot.val();
-      const pendientes = {};
-      if (data) {
-        Object.values(data).forEach(usuarioCompras => {
-          Object.values(usuarioCompras).forEach(compra => {
-            if (compra.estado === "enviando") {
-              pendientes[compra.productoId] = (pendientes[compra.productoId] || 0) + (compra.cantidad || 1);
-            }
-          });
-        });
-      }
-      setComprasPendientes(pendientes);
-    });
-    // 2. Obtener datos del usuario actual
+    // 1. Obtener datos del usuario actual
     const user = auth.currentUser;
     if (user) {
       const userRef = ref(db, `users/${user.uid}`);
@@ -231,13 +223,33 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
     }
   };
 
+  // Exponer cantidad de items en carrito al contenedor (para badge del navbar)
+  useEffect(() => {
+    if (typeof onCartCountChange !== 'function') return;
+    const count = carrito.reduce((sum, item) => sum + (Number(item.cantidad) || 1), 0);
+    onCartCountChange(count);
+  }, [carrito, onCartCountChange]);
+
   /**
    * Formatea la distancia para mostrar en la tabla
    */
   function mostrarDistancia(dist) {
-    if (dist === null || dist === undefined || isNaN(dist)) return "-";
-    if (dist < 1000) return Math.round(dist) + " m";
-    return (dist / 1000).toFixed(2) + " km";
+    if (dist === null || dist === undefined || isNaN(dist)) return "—";
+    const metros = Number(dist);
+    if (metros < 1000) return `${Math.round(metros)} m`;
+    const km = metros / 1000;
+    if (km >= 10) return `${Math.round(km)} km`;
+    return `${km.toFixed(1)} km`;
+  }
+
+  function formatearPrecioArs(value) {
+    const n = Number(value);
+    if (!isFinite(n)) return '—';
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: 'ARS',
+      maximumFractionDigits: 2,
+    }).format(n);
   }
 
 
@@ -262,7 +274,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
     .filter(prod => Number(prod.stock) > 0)
     .filter(prod => {
       if (!prod.farmacia) return false;
-      return isFarmaciaAbierta(prod.farmacia.horarios);
+      return true;
     });
 
   // Ordenar productos filtrados por distancia (menor primero)
@@ -274,121 +286,111 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
 
   // Render principal del componente
   return (
-    <div style={{ maxWidth: "600px", margin: "auto", padding: "20px" }}>
-      <h2>Productos disponibles</h2>
-      {/* Filtro de búsqueda por nombre */}
-      <input
-        type="text"
-        placeholder="Filtrar por nombre de medicamento"
-        value={filtroNombre}
-        onChange={e => setFiltroNombre(e.target.value)}
-        style={{ marginBottom: "15px", width: "100%", padding: "8px" }}
-      />
-      {/* Carrito de compras */}
-      {mostrarCarrito && (
-        <Carrito carrito={carrito} onRemove={removerProductoDelCarrito} onComprar={handleComprar} />
-      )}
-      {notif && <div style={{ marginTop: '8px', padding: '8px', background: '#e9f7ef', color: '#155724', borderRadius: '6px' }}>{notif}</div>}
-      {/* Tabla de productos filtrados */}
+    <div className="space-y-4">
+      <header className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Productos cerca tuyo</h2>
+          <p className="text-sm text-slate-500">
+            {productosFiltradosConDistancia.length} resultado{productosFiltradosConDistancia.length === 1 ? '' : 's'}
+          </p>
+        </div>
+
+        <Input
+          type="text"
+          placeholder="Buscar medicamento"
+          value={filtroNombre}
+          onChange={e => setFiltroNombre(e.target.value)}
+        />
+
+        {mostrarCarrito && (
+          <Carrito carrito={carrito} onRemove={removerProductoDelCarrito} onComprar={handleComprar} />
+        )}
+        {notif && <UiAlert variant="success">{notif}</UiAlert>}
+      </header>
+
       {productosFiltradosConDistancia.length === 0 ? (
-        // Si el usuario está aplicando un filtro de búsqueda y no hay resultados,
-        // mostrar un mensaje amigable y una opción para limpiar el filtro.
         filtroNombre && String(filtroNombre).trim() !== "" ? (
-          <div style={{ padding: '12px', background: '#fff3cd', color: '#856404', borderRadius: '6px' }}>
-            <p style={{ margin: 0, fontWeight: '600' }}>No se encontró ningún resultado para tu búsqueda.</p>
-            <p style={{ margin: '6px 0 0 0' }}>Probá con otra palabra, verificá la ortografía o sacá los filtros para ver todos los productos.</p>
-            <button onClick={() => setFiltroNombre('')} style={{ marginTop: '8px' }}>Mostrar todos los productos</button>
-          </div>
+          <UiAlert variant="default">
+            <div className="space-y-2">
+              <div className="font-semibold">No se encontraron resultados.</div>
+              <div className="text-slate-600">Probá con otra palabra o limpiá la búsqueda.</div>
+              <UiButton type="button" variant="outline" size="sm" onClick={() => setFiltroNombre('')}>
+                Mostrar todos
+              </UiButton>
+            </div>
+          </UiAlert>
         ) : (
-          <p>No hay productos cargados.</p>
+          <UiAlert variant="default">No hay productos cargados.</UiAlert>
         )
       ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              <th>Nombre</th>
-              <th>Precio</th>
-              <th>Stock</th>
-              <th>Farmacia</th>
-              <th>Estado Farmacia</th>
-              <th>Receta</th>
-              <th>Distancia</th>
-              <th>Estado</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {productosFiltradosConDistancia.map((prod) => {
-              const estadoFarmacia = getEstadoFarmacia(prod.farmacia?.horarios);
-              return (
-                <tr key={prod.id}>
-                  <td>{prod.nombre}</td>
-                  <td>${prod.precio}</td>
-                  <td>{prod.stock}</td>
-                  <td>{prod.farmacia ? prod.farmacia.nombreFarmacia : prod.farmaciaId}</td>
-                  <td>
-                    <span style={{
-                      color: estadoFarmacia.abierta ? '#28a745' : '#dc3545',
-                      fontWeight: 'bold',
-                      fontSize: '12px'
-                    }}>
-                      {estadoFarmacia.abierta ? '🟢 Abierta' : '🔴 Cerrada'}
-                    </span>
-                    {!estadoFarmacia.abierta && (
-                      <div style={{ fontSize: '10px', color: '#666' }}>
-                        {estadoFarmacia.mensaje}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    {prod.requiereReceta ? (
-                      <span style={{
-                        backgroundColor: '#ffc107',
-                        color: '#856404',
-                        padding: '2px 6px',
-                        borderRadius: '3px',
-                        fontSize: '11px',
-                        fontWeight: 'bold'
-                      }}>
-                        📋 Receta
-                      </span>
-                    ) : (
-                      <span style={{ color: '#6c757d', fontSize: '12px' }}>-</span>
-                    )}
-                  </td>
-                  <td>{mostrarDistancia(prod.distancia)}</td>
-                  <td>{
-                    prod.estado === "por_comprar" ? "Por comprar" :
-                    prod.estado === "enviando" ? "Enviando" :
-                    prod.estado === "recibido" ? "Recibido" : prod.estado
-                  }</td>
-                  <td>
-                    {/* Permitir volver a comprar el mismo producto después de pagar: */}
-                    {/* mostramos el control de cantidad y botón siempre que haya stock disponible */}
-                    {Number(prod.stock) > 0 ? (
-                      <>
-                        <input
-                          type="number"
-                          min={1}
-                          max={prod.stock}
-                          value={cantidades[prod.id] || 1}
-                          onChange={e => setCantidades({ ...cantidades, [prod.id]: e.target.value })}
-                          style={{ width: "60px", marginRight: "8px" }}
-                        />
-                        <button onClick={() => agregarProductoAlCarrito(prod.id)}>
-                          Agregar al carrito
-                        </button>
-                      </>
-                    ) : (
-                      <span style={{ color: '#888' }}>Sin stock</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="space-y-3">
+          {productosFiltradosConDistancia.map((prod) => {
+            const estadoFarmacia = getEstadoFarmacia(prod.farmacia?.horarios);
+            const active = highlightedFarmaciaId && String(highlightedFarmaciaId) === String(prod.farmaciaId);
+
+            return (
+              <div
+                key={prod.id}
+                onMouseEnter={() => onHoverFarmaciaId && onHoverFarmaciaId(prod.farmaciaId)}
+                onMouseLeave={() => onHoverFarmaciaId && onHoverFarmaciaId(null)}
+                className={cn(
+                  'rounded-xl border bg-white p-4 shadow-sm transition',
+                  'hover:shadow-md',
+                  active ? 'border-teal-300 ring-1 ring-teal-200' : 'border-slate-200'
+                )}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-lg font-semibold text-slate-900 truncate">{prod.nombre}</div>
+                    <div className="mt-1 text-sm text-slate-500 truncate">
+                      <span className="text-slate-400">🏥</span>{' '}
+                      {prod.farmacia ? (prod.farmacia.nombreFarmacia || 'Farmacia') : (prod.farmaciaId || 'Farmacia')}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-lg font-semibold text-slate-900">
+                    {formatearPrecioArs(prod.precio)}
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge className={estadoFarmacia.abierta ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}>
+                    {estadoFarmacia.abierta ? '● Abierto ahora' : '● Cerrado'}
+                  </Badge>
+                  {prod.requiereReceta && (
+                    <Badge className="border-amber-200 bg-amber-50 text-amber-700">📄 Receta</Badge>
+                  )}
+                  <Badge className="border-slate-200 bg-slate-50 text-slate-600">
+                    <span className="text-slate-400">📍</span> a {mostrarDistancia(prod.distancia)}
+                  </Badge>
+                </div>
+
+                {!estadoFarmacia.abierta && estadoFarmacia.mensaje && (
+                  <div className="mt-2 text-xs text-slate-500">{estadoFarmacia.mensaje}</div>
+                )}
+
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={prod.stock}
+                      value={cantidades[prod.id] || 1}
+                      onChange={e => setCantidades({ ...cantidades, [prod.id]: e.target.value })}
+                      className="w-20"
+                    />
+                    <div className="text-xs text-slate-500">Stock: {prod.stock}</div>
+                  </div>
+
+                  <UiButton type="button" onClick={() => agregarProductoAlCarrito(prod.id)}>
+                    Agregar
+                  </UiButton>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
+
       {/* Modal para subir receta médica */}
       {mostrarUploadReceta && productoParaReceta && (
         <UploadRecetaSimple

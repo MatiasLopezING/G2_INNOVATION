@@ -70,9 +70,6 @@ const Register = () => {
   const [error, setError] = useState('');
   const [errors, setErrors] = useState({});
   const [success, setSuccess] = useState('');
-  // Ayuda contextual por campo
-  const [help, setHelp] = useState({});
-  const toggleHelp = (key) => setHelp(prev => ({ ...prev, [key]: !prev[key] }));
   const navigate = useNavigate();
 
   const totalSteps = 2;
@@ -150,21 +147,8 @@ const Register = () => {
     }
   });
 
-  // Usuario
-  const [dni, setDni] = useState('');
-  const [nombre, setNombre] = useState('');
-  const [apellido, setApellido] = useState('');
+  // Usuario: se gestiona con React Hook Form (usuarioForm)
   const [fechaNacimiento, setFechaNacimiento] = useState('');
-  const [obraSocial, setObraSocial] = useState('');
-  const [nroAfiliado, setNroAfiliado] = useState('');
-  const [vencimiento, setVencimiento] = useState('');
-  const [cobertura, setCobertura] = useState('');
-  const [direccion, setDireccion] = useState('');
-  const [lat, setLat] = useState('');
-  const [lng, setLng] = useState('');
-  const [coordStatus, setCoordStatus] = useState(null); // null | 'ok' | 'fail'
-  const [tarjeta, setTarjeta] = useState('');
-  const [codigoTarjeta, setCodigoTarjeta] = useState('');
 
   // Farmacia
   const [nombreFarmacia, setNombreFarmacia] = useState('');
@@ -559,14 +543,18 @@ const Register = () => {
         setFieldError('email', 'Ese correo ya está en uso actualmente.');
         return;
       }
-      // Validación y duplicado de DNI para Usuario y Distribuidor
-      if (role === 'Usuario' || role === 'Distribuidor') {
-        const dniValue = role === 'Usuario' ? dni : dniDelivery;
-        const dniFieldName = role === 'Usuario' ? 'dni' : 'dniDelivery';
-        const vDni = validateField('dni', dniValue);
-        if (vDni) { setFieldError(dniFieldName, vDni); return; }
-        const dniTaken = await isDniRegistered(dniValue);
-        if (dniTaken) { setFieldError(dniFieldName, 'Ese DNI ya está registrado.'); return; }
+      // Validación y duplicado de DNI para Distribuidor (Usuario se registra con handleRegisterUsuario)
+      if (role === 'Distribuidor') {
+        const vDni = validateField('dni', dniDelivery);
+        if (vDni) {
+          setFieldError('dniDelivery', vDni);
+          return;
+        }
+        const dniTaken = await isDniRegistered(dniDelivery);
+        if (dniTaken) {
+          setFieldError('dniDelivery', 'Ese DNI ya está registrado.');
+          return;
+        }
       }
 
       if (role === 'Distribuidor') {
@@ -630,22 +618,7 @@ const Register = () => {
       const user = userCredential.user;
 
       let userData = { email: String(email).toLowerCase(), role };
-      if (role === 'Usuario') {
-        userData = {
-          ...userData,
-          dni,
-          nombre,
-          apellido,
-          fechaNacimiento,
-          obraSocial,
-          nroAfiliado,
-          vencimiento,
-          cobertura,
-          direccion,
-          latitud: lat,
-          longitud: lng
-        };
-      } else if (role === 'Farmacia') {
+      if (role === 'Farmacia') {
         userData = {
           ...userData,
           nombreFarmacia,

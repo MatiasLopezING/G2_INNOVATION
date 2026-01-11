@@ -78,7 +78,7 @@ const RevisionRecetas = ({ embedded = false, onClose }) => {
         setUserMap(prev => ({ ...prev, [uid]: {} }));
       }
     });
-  }, [recetas]);
+  }, [recetas, userMap]);
 
   const renderUsuario = (uid) => {
     if (!uid) return '—';

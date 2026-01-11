@@ -48,7 +48,7 @@ function DistribuidorProductos() {
     const u = auth.currentUser;
     if (!u) return;
     const userRef = ref(db, `users/${u.uid}`);
-    const unsub = onValue(userRef, (snap) => {
+    onValue(userRef, (snap) => {
       const data = snap.val() || {};
       const status = data?.deliveryVerification?.status || (data?.deliveryVerified ? 'accepted' : null);
       setVerifStatus(status);
@@ -71,7 +71,7 @@ function DistribuidorProductos() {
     const u = auth.currentUser;
     if (!u) return;
     const notifRef = ref(db, `notificaciones/${u.uid}`);
-    const unsub = onValue(notifRef, (snap) => {
+    onValue(notifRef, (snap) => {
       const data = snap.val() || {};
       const list = Object.entries(data).map(([id, n]) => ({ id, ...n }))
         .filter(n => n.tipo === 'delivery_aceptado' || n.tipo === 'delivery_rechazado')
@@ -341,8 +341,6 @@ function DistribuidorProductos() {
       });
       setComprasMap(map);
     });
-
-    const user = auth.currentUser;
 
     return () => {
       unsubscribeProductos();
@@ -654,7 +652,6 @@ function DistribuidorProductos() {
         const id = returnModalProductId;
         const prod = productos.find(p => p.id === id) || {};
         const compraInfo = comprasMap[id];
-        const usuarioCompra = compraInfo ? usuarios.find(u => u.id === compraInfo.uid) : null;
         const farmacia = farmacias.find(f => f.id === prod.farmaciaId) || null;
         const cached = addressMap[id] || {};
         let farmaciaDir = cached.farmaciaAddr || compraInfo?.compra?.farmaciaDireccion || farmacia?.direccionFarmacia || farmacia?.direccion || farmacia?.direccionCompleta || null;
