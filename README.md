@@ -18,23 +18,27 @@ Coloca **solo** estas imágenes en `docs/screenshots/` con los nombres exactos:
 
 ![Inicio de sesión](docs/screenshots/login.png)
 
-2) Registro: selección de rol
+2) Registro
+
+![Registro](docs/screenshots/register.png)
+
+3) Registro: selección de rol
 
 ![Registro - selección de rol](docs/screenshots/register-role.png)
 
-3) Registro Usuario
+4) Registro Usuario
 
 ![Registro Usuario](docs/screenshots/register-usuario.png)
 
-4) Registro Farmacia
+5) Registro Farmacia
 
 ![Registro Farmacia](docs/screenshots/register-farmacia.png)
 
-5) Registro Delivery
+6) Registro Delivery
 
 ![Registro Delivery](docs/screenshots/register-delivery.png)
 
-6) Inicio del Usuario (Split View)
+7) Inicio del Usuario (Split View)
 
 ![Home Usuario](docs/screenshots/usuario-home.png)
 
