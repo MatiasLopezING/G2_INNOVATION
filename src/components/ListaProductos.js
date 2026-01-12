@@ -6,11 +6,16 @@
  */
 
 import React, { useEffect, useState, useCallback } from "react";
-import { ref, onValue } from "firebase/database";
+import { ref, onValue, push, update } from "firebase/database";
 import { db, auth } from "../firebase";
 import Carrito from "./Carrito";
 import UploadRecetaSimple from "./UploadRecetaSimple";
-import { isFarmaciaAbierta, getEstadoFarmacia } from '../utils/horariosUtils';
+import { getEstadoFarmacia } from '../utils/horariosUtils';
+import { Input } from './ui/input';
+import { Button as UiButton } from './ui/button';
+import { Badge } from './ui/badge';
+import { Alert as UiAlert } from './ui/alert';
+import { cn } from '../lib/utils';
 
 // Componente principal para mostrar y gestionar productos disponibles
 const ListaProductos = ({ mostrarCarrito = true }) => {
@@ -28,6 +33,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
   const openRouteApiKey = process.env.REACT_APP_OPENROUTE_API_KEY;
   // Estado: productos en el carrito
   const [carrito, setCarrito] = useState([]);
+  const [notif, setNotif] = useState('');
   // Estado: cantidades seleccionadas por producto
   const [cantidades, setCantidades] = useState({});
   // Estado: mostrar modal de subida de receta
@@ -139,7 +145,7 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
     const idx = carrito.findIndex(p => p.id === id);
     const cantidadEnCarrito = idx >= 0 ? (carrito[idx].cantidad || 1) : 0;
     if (cantidad < 1 || (cantidad + cantidadEnCarrito) > stockDisponible) {
-      alert(`No puedes agregar ${cantidad} unidades. Stock disponible: ${stockDisponible - cantidadEnCarrito}`);
+      alert(`No hay suficiente stock. Solo quedan ${stockDisponible - cantidadEnCarrito} unidades disponibles.`);
       return;
     }
     if (producto.requiereReceta) {
@@ -188,9 +194,22 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
    * Formatea la distancia para mostrar en la tabla
    */
   function mostrarDistancia(dist) {
-    if (dist === null || dist === undefined || isNaN(dist)) return "-";
-    if (dist < 1000) return Math.round(dist) + " m";
-    return (dist / 1000).toFixed(2) + " km";
+    if (dist === null || dist === undefined || isNaN(dist)) return "—";
+    const metros = Number(dist);
+    if (metros < 1000) return `${Math.round(metros)} m`;
+    const km = metros / 1000;
+    if (km >= 10) return `${Math.round(km)} km`;
+    return `${km.toFixed(1)} km`;
+  }
+
+  function formatearPrecioArs(value) {
+    const n = Number(value);
+    if (!isFinite(n)) return '—';
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: 'ARS',
+      maximumFractionDigits: 2,
+    }).format(n);
   }
 
 
@@ -198,7 +217,8 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
    * Filtra productos por nombre, asocia farmacia y calcula distancia
    */
   const productosFiltradosConDistancia = productos
-    .filter(prod => prod.nombre.toLowerCase().includes(filtroNombre.toLowerCase()))
+    // proteger contra nombres undefined -> evitar crash al llamar toLowerCase
+    .filter(prod => (prod && prod.nombre ? String(prod.nombre) : '').toLowerCase().includes(String(filtroNombre || '').toLowerCase()))
     .map(prod => {
       const farmacia = farmacias.find(f => f.id === prod.farmaciaId);
       if (farmacia && usuario && prod.id && distanciasApi[prod.id] === undefined) {
@@ -210,9 +230,11 @@ const ListaProductos = ({ mostrarCarrito = true }) => {
         distancia: distanciasApi[prod.id] !== undefined ? distanciasApi[prod.id] : null
       };
     })
+    // ocultar productos sin stock
+    .filter(prod => Number(prod.stock) > 0)
     .filter(prod => {
       if (!prod.farmacia) return false;
-      return isFarmaciaAbierta(prod.farmacia.horarios);
+      return true;
     });
 
   // Ordenar productos filtrados por distancia (menor primero)

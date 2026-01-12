@@ -1,8 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
 import { getDatabase } from "firebase/database";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserSessionPersistence } from "firebase/auth";
 import { getStorage } from "firebase/storage";
+import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
@@ -16,9 +16,15 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 
 export const db = getDatabase(app);
 export const auth = getAuth(app);
+// Importante: persistencia por pestaña/ventana para permitir múltiples sesiones simultáneas
+// (usuario, farmacia, delivery) en diferentes pestañas sin desloguear a las demás.
+setPersistence(auth, browserSessionPersistence).catch(() => {
+  // En caso de algún error de persistencia (ej. bloqueo de 3rd-party cookies),
+  // la app seguirá funcionando con la persistencia por defecto.
+});
 export const storage = getStorage(app);
+export const functions = getFunctions(app); // Usado para callable que elimina usuario de Auth por UID
 export { app };

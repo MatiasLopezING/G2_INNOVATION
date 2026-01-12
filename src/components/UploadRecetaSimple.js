@@ -63,11 +63,13 @@ const UploadRecetaSimple = ({ producto, farmaciaId, onUploadComplete, onCancel }
     const unsubscribe = onValue(recetasRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const recetasUsuario = Object.values(data).filter(receta => 
-          receta.usuarioId === user.uid && 
-          receta.productoId === producto.id && 
-          receta.estado === 'pendiente'
-        );
+        // Normalizar y comparar como strings para evitar falsos positivos
+        const lista = Object.entries(data).map(([id, receta]) => ({ id, ...receta }));
+        const recetasUsuario = lista.filter(receta => {
+          if (!receta) return false;
+          if (!receta.usuarioId || !receta.productoId) return false;
+          return String(receta.usuarioId) === String(user.uid) && String(receta.productoId) === String(producto.id) && receta.estado === 'pendiente';
+        });
         setRecetaPendiente(recetasUsuario.length > 0);
       } else {
         setRecetaPendiente(false);

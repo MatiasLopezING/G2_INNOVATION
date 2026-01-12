@@ -5,6 +5,9 @@ import Register from "./components/Register";
 import Distribuidor from "./components/Distribuidor";
 import Farmacia from "./components/Farmacia";
 import Usuario from "./components/Usuario";
+import RevisionDeliverys from "./components/RevisionDeliverys";
+import RevisionRecetas from "./components/RevisionRecetas";
+import FarmaciaNotificaciones from "./components/FarmaciaNotificaciones";
 
 function HomeLogin() {
   const navigate = useNavigate();
@@ -21,6 +24,9 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/distribuidor" element={<Distribuidor />} />
         <Route path="/farmacia" element={<Farmacia />} />
+        <Route path="/notificaciones" element={<FarmaciaNotificaciones />} />
+        <Route path="/revision-deliverys" element={<RevisionDeliverys />} />
+        <Route path="/revision-recetas" element={<RevisionRecetas />} />
         <Route path="/usuario" element={<Usuario />} />
       </Routes>
     </BrowserRouter>

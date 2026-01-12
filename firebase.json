@@ -1,4 +1,7 @@
 {
+  "functions": {
+    "source": "functions"
+  },
   "emulators": {
     "dataconnect": {
       "dataDir": "dataconnect/.dataconnect/pgliteData"

@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { getEstadoFarmacia } from '../utils/horariosUtils';
+import { cn } from '../lib/utils';
 
 /**
  * Componente para mostrar el mapa del usuario, farmacias y deliverys.
@@ -24,6 +25,12 @@ const farmaciaIcon = L.icon({
   iconAnchor: [16, 32],
   popupAnchor: [0, -32]
 });
+const farmaciaIconHighlighted = L.icon({
+  iconUrl: process.env.PUBLIC_URL + "/icons/farmacia.png",
+  iconSize: [44, 44],
+  iconAnchor: [22, 44],
+  popupAnchor: [0, -44]
+});
 const deliveryIcon = L.icon({
   iconUrl: process.env.PUBLIC_URL + "/icons/delivery.png",
   iconSize: [32, 32],
@@ -31,15 +38,26 @@ const deliveryIcon = L.icon({
   popupAnchor: [0, -32]
 });
 
-function MapaUsuario({ usuario, farmacias, deliverys = [] }) {
+function MapaUsuario({
+  usuario,
+  farmacias,
+  deliverys = [],
+  highlightedFarmaciaId = null,
+  onHoverFarmaciaId,
+  className,
+}) {
   if (!usuario?.latitud || !usuario?.longitud) {
-    return <div>No se encontró ubicación del usuario.</div>;
+    return (
+      <div className={cn('h-full w-full rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600', className)}>
+        No se encontró ubicación del usuario.
+      </div>
+    );
   }
 
   const position = [Number(usuario.latitud), Number(usuario.longitud)];
 
   return (
-    <div style={{ height: "400px", width: "100%", marginBottom: "20px" }}>
+    <div className={cn('h-full w-full', className)}>
       <MapContainer center={position} zoom={13} style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -52,9 +70,18 @@ function MapaUsuario({ usuario, farmacias, deliverys = [] }) {
           if (!farmacia.latitud || !farmacia.longitud) return null;
           
           const estado = getEstadoFarmacia(farmacia.horarios);
+          const active = highlightedFarmaciaId && String(highlightedFarmaciaId) === String(farmacia.id);
           
           return (
-            <Marker key={farmacia.id} position={[Number(farmacia.latitud), Number(farmacia.longitud)]} icon={farmaciaIcon}>
+            <Marker
+              key={farmacia.id}
+              position={[Number(farmacia.latitud), Number(farmacia.longitud)]}
+              icon={active ? farmaciaIconHighlighted : farmaciaIcon}
+              eventHandlers={{
+                mouseover: () => onHoverFarmaciaId && onHoverFarmaciaId(farmacia.id),
+                mouseout: () => onHoverFarmaciaId && onHoverFarmaciaId(null),
+              }}
+            >
               <Popup>
                 <div>
                   <h4 style={{ margin: '0 0 8px 0', fontSize: '16px' }}>

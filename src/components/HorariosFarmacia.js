@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+
+import { Button as UiButton } from './ui/button';
+import { Badge } from './ui/badge';
 
 /**
  * Componente para mostrar y gestionar los horarios de la farmacia.
@@ -6,9 +9,9 @@ import React, { useState } from 'react';
  *   - horarios: objeto con los horarios de la farmacia
  *   - onChange: función para actualizar los horarios
  */
-const HorariosFarmacia = ({ horarios, setHorarios }) => {
+const HorariosFarmacia = ({ horarios, setHorarios, embedded = false, defaultOpen = false }) => {
   // Estado para mostrar/ocultar el formulario de edición
-  const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  const [mostrarFormulario, setMostrarFormulario] = useState(Boolean(defaultOpen));
 
   // Días de la semana
   const diasSemana = [
@@ -22,6 +25,17 @@ const HorariosFarmacia = ({ horarios, setHorarios }) => {
       : { abierto: true, apertura: '08:00', cierre: '20:00' };
     return acc;
   }, {});
+
+  const resumen = useMemo(() => {
+    return diasSemana
+      .map((dia) => {
+        const h = horariosPorDia[dia];
+        if (!h.abierto) return `${dia}: Cerrado`;
+        return `${dia}: ${h.apertura} - ${h.cierre}`;
+      })
+      .join(' · ');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [horarios]);
 
   /**
    * Actualiza el horario de un día específico
@@ -46,7 +60,7 @@ const HorariosFarmacia = ({ horarios, setHorarios }) => {
       nuevosHorarios[dia].abierto &&
       nuevosHorarios[dia].apertura >= nuevosHorarios[dia].cierre
     ) {
-      alert('La hora de cierre debe ser mayor que la de apertura.');
+      alert('La hora de cierre debe ser después de la de apertura. Por favor corrige la hora.');
       return;
     }
     setHorarios(nuevosHorarios);
@@ -67,133 +81,84 @@ const HorariosFarmacia = ({ horarios, setHorarios }) => {
   /**
    * Formatea los horarios para mostrar como texto resumido
    */
-  const resumenHorarios = () => {
-    return diasSemana.map(dia => {
-      const horario = horariosPorDia[dia];
-      if (!horario.abierto) {
-        return `${dia}: Cerrado`;
-      }
-      return `${dia}: ${horario.apertura} - ${horario.cierre}`;
-    }).join(', ');
-  };
-
   // Render principal
   return (
-    <div style={{ width: '100%', marginBottom: '10px' }}>
-      <label>Horarios de atención:</label>
-      {/* Resumen visual de horarios */}
-      <div style={{ 
-        border: '1px solid #ccc', 
-        borderRadius: '4px', 
-        padding: '8px', 
-        marginBottom: '8px',
-        backgroundColor: '#f9f9f9'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '14px', color: '#666' }}>
-            {resumenHorarios()}
-          </span>
-          <button
+    <div className={embedded ? 'w-full' : 'w-full'}>
+      {!embedded && (
+        <div className="mb-2 text-sm font-medium text-slate-700">Horarios de atención</div>
+      )}
+
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="text-sm text-slate-600">
+            <div className="text-xs text-slate-500 mb-1">Resumen</div>
+            <div className="leading-relaxed">{resumen}</div>
+          </div>
+          <UiButton
             type="button"
+            variant="outline"
+            size="sm"
             onClick={() => setMostrarFormulario(!mostrarFormulario)}
-            style={{
-              padding: '4px 8px',
-              fontSize: '12px',
-              border: '1px solid #007bff',
-              backgroundColor: '#007bff',
-              color: 'white',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
           >
-            {mostrarFormulario ? 'Ocultar' : 'Editar horarios'}
-          </button>
+            {mostrarFormulario ? 'Ocultar' : 'Editar'}
+          </UiButton>
         </div>
       </div>
 
-      {/* Formulario de edición de horarios por día */}
       {mostrarFormulario && (
-        <div style={{ 
-          border: '1px solid #ddd', 
-          borderRadius: '4px', 
-          padding: '15px', 
-          backgroundColor: '#fff',
-          maxHeight: '300px',
-          overflowY: 'auto'
-        }}>
-          <h4 style={{ margin: '0 0 15px 0', fontSize: '16px' }}>Configurar horarios por día</h4>
-          {diasSemana.map(dia => (
-            <div key={dia} style={{ 
-              marginBottom: '12px', 
-              padding: '8px', 
-              border: '1px solid #eee', 
-              borderRadius: '4px',
-              backgroundColor: '#fafafa'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <label htmlFor={`dia-${dia}`} style={{ fontWeight: 'bold', fontSize: '14px' }}>{dia}:</label>
-                <button
-                  type="button"
-                  onClick={() => copiarHorarioATodos(dia)}
-                  style={{
-                    padding: '2px 6px',
-                    fontSize: '10px',
-                    border: '1px solid #28a745',
-                    backgroundColor: '#28a745',
-                    color: 'white',
-                    borderRadius: '3px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Copiar a todos
-                </button>
+        <div className="mt-4 rounded-md border border-slate-200 bg-white p-4 max-h-[320px] overflow-auto">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="text-sm font-semibold text-slate-900">Configurar horarios por día</div>
+            <Badge>Tip: “Copiar a todos” aplica el mismo horario</Badge>
+          </div>
+
+          <div className="space-y-3">
+            {diasSemana.map((dia) => (
+              <div key={dia} className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-slate-900">{dia}</div>
+                  <UiButton type="button" variant="outline" size="sm" onClick={() => copiarHorarioATodos(dia)}>
+                    Copiar a todos
+                  </UiButton>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={horariosPorDia[dia].abierto}
+                      onChange={(e) => actualizarHorarioDia(dia, 'abierto', e.target.checked)}
+                    />
+                    Abierto
+                  </label>
+
+                  {horariosPorDia[dia].abierto ? (
+                    <>
+                      <label className="text-sm text-slate-700 inline-flex items-center gap-2">
+                        Apertura
+                        <input
+                          type="time"
+                          value={horariosPorDia[dia].apertura}
+                          onChange={(e) => actualizarHorarioDia(dia, 'apertura', e.target.value)}
+                          className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+                        />
+                      </label>
+                      <label className="text-sm text-slate-700 inline-flex items-center gap-2">
+                        Cierre
+                        <input
+                          type="time"
+                          value={horariosPorDia[dia].cierre}
+                          onChange={(e) => actualizarHorarioDia(dia, 'cierre', e.target.value)}
+                          className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <span className="text-sm text-slate-500">Cerrado</span>
+                  )}
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <input
-                    id={`abierto-${dia}`}
-                    type="checkbox"
-                    checked={horariosPorDia[dia].abierto}
-                    onChange={(e) => actualizarHorarioDia(dia, 'abierto', e.target.checked)}
-                  />
-                  <span style={{ fontSize: '12px' }}>Abierto</span>
-                </label>
-                {horariosPorDia[dia].abierto && (
-                  <>
-                    <label style={{ fontSize: '12px' }}>
-                      Apertura:
-                      <input
-                        id={`apertura-${dia}`}
-                        type="time"
-                        value={horariosPorDia[dia].apertura}
-                        onChange={(e) => actualizarHorarioDia(dia, 'apertura', e.target.value)}
-                        style={{ marginLeft: '4px', fontSize: '12px' }}
-                      />
-                    </label>
-                    <label style={{ fontSize: '12px' }}>
-                      Cierre:
-                      <input
-                        id={`cierre-${dia}`}
-                        type="time"
-                        value={horariosPorDia[dia].cierre}
-                        onChange={(e) => actualizarHorarioDia(dia, 'cierre', e.target.value)}
-                        style={{ marginLeft: '4px', fontSize: '12px' }}
-                      />
-                    </label>
-                  </>
-                )}
-              </div>
-            </div>
-          ))}
-          <div style={{ 
-            marginTop: '15px', 
-            padding: '8px', 
-            backgroundColor: '#e7f3ff', 
-            borderRadius: '4px',
-            fontSize: '12px',
-            color: '#0066cc'
-          }}>
-            💡 Tip: Puedes usar "Copiar a todos" para aplicar el mismo horario a todos los días
+            ))}
           </div>
         </div>
       )}

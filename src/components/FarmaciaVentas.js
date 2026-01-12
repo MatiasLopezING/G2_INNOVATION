@@ -43,7 +43,8 @@ const FarmaciaVentas = () => {
       await update(ref(db, `productos/${id}`), { stock: nuevoStock });
       setMensaje(`Venta realizada. Stock restante: ${nuevoStock}`);
     } catch (err) {
-      setMensaje("Error al realizar la venta: " + err.message);
+      console.error(err);
+      setMensaje('No se pudo completar la venta. Intenta nuevamente.');
     }
   };
 

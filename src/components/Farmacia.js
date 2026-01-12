@@ -4,13 +4,14 @@
  *
  * No recibe props. Utiliza componentes internos para la lógica principal.
  */
-import React, { useState } from 'react';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import FarmaciaProductos from './FarmaciaProductos';
 import FarmaciaVentas from './FarmaciaVentas';
-import RevisionRecetas from './RevisionRecetas';
+import Header from './Header';
 
 const Farmacia = () => {
-  const [mostrarRecetas, setMostrarRecetas] = useState(false);
+  const navigate = useNavigate();
 
   // Estilos tipo login
   const baseFont = "Nunito Sans, Inter, Poppins, Arial, sans-serif";

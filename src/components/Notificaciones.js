@@ -5,7 +5,7 @@
  * No recibe props. Utiliza Firebase para obtener y eliminar notificaciones.
  */
 import React, { useEffect, useState } from 'react';
-import { ref, onValue, remove } from 'firebase/database';
+import { ref, onValue } from 'firebase/database';
 import { db, auth } from '../firebase';
 
 const Notificaciones = () => {
@@ -29,17 +29,6 @@ const Notificaciones = () => {
     });
     return () => unsubscribe();
   }, []);
-
-  // Elimina una notificación
-  const eliminarNotificacion = async (notificacionId) => {
-    const user = auth.currentUser;
-    if (!user) return;
-    try {
-      await remove(ref(db, `notificaciones/${user.uid}/${notificacionId}`));
-    } catch (error) {
-      console.error('Error al eliminar notificación:', error);
-    }
-  };
 
   // Icono según tipo de notificación
   const getIconoTipo = (tipo) => {
@@ -93,7 +82,7 @@ const Notificaciones = () => {
       <h3>🔔 Notificaciones</h3>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {notificaciones.map(notif => (
-          <li key={notif.id} style={{ background: '#fff', border: '1px solid #dee2e6', borderRadius: '8px', marginBottom: '12px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <li key={notif.id} style={{ background: '#fff', border: '1px solid #dee2e6', borderRadius: '8px', marginBottom: '12px', padding: '16px', display: 'flex', alignItems: 'center' }}>
             <span style={{ color: getColorTipo(notif.tipo), fontSize: '22px', marginRight: '12px' }}>{getIconoTipo(notif.tipo)}</span>
             <span style={{ flex: 1 }}>
               {notif.mensaje}
@@ -103,7 +92,6 @@ const Notificaciones = () => {
                 </span>
               )}
             </span>
-            <button onClick={() => eliminarNotificacion(notif.id)} style={{ marginLeft: '12px', background: '#dc3545', color: '#fff', border: 'none', borderRadius: '5px', padding: '6px 12px', cursor: 'pointer' }}>Eliminar</button>
           </li>
         ))}
       </ul>

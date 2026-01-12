@@ -1,0 +1,17 @@
+{
+  "name": "g2-innovation-functions",
+  "description": "Cloud Functions for G2 Innovation app",
+  "scripts": {
+    "build": "echo 'No build step'",
+    "lint": "echo 'No lint'",
+    "deploy": "firebase deploy --only functions"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.0.1"
+  }
+}

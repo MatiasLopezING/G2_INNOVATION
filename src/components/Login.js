@@ -8,9 +8,30 @@
 import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 import { ref, get } from "firebase/database";
 import { auth, db } from "../firebase";
+
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Divider,
+  InputAdornment,
+  Link,
+  Paper,
+  TextField,
+  Typography,
+} from "@mui/material";
+
+import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import GoogleIcon from "@mui/icons-material/Google";
 
 export default function Login({ botonMargin = 10, botonRegistro }) {
   const [show, setShow] = useState(false);
@@ -41,6 +62,17 @@ export default function Login({ botonMargin = 10, botonRegistro }) {
       } else {
         setError("No se encontraron datos de usuario.");
       }
+      const userData = snapshot.val();
+      if (userData.role === 'Distribuidor') {
+        // Permitir acceso SIEMPRE. El gating para recibir trabajos se hace en el panel.
+        navigate('/distribuidor');
+        return;
+      }
+      if (userData.role === 'Farmacia') {
+        navigate('/farmacia');
+        return;
+      }
+      navigate('/usuario');
     } catch (err) {
       if (err.code === "auth/invalid-credential") {
         setError("Credenciales incorrectas. Verifique su correo o contraseña.");

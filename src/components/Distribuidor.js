@@ -1,5 +1,6 @@
 import React from 'react';
 import DistribuidorProductos from './DistribuidorProductos';
+import Header from './Header';
 
 /**
  * Componente principal para el rol de Distribuidor.
